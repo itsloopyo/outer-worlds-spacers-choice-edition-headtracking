@@ -1,0 +1,90 @@
+[workspace]
+name = "outer-worlds-spacers-choice-edition-headtracking"
+version = "0.0.0"
+description = "Head tracking mod for Outer Worlds: Spacer's Choice Edition (UE 4.27)"
+license = "MIT"
+license-file = "LICENSE"
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tasks]
+update-submodule = "git submodule update --remote cameraunlock-core && powershell -NoProfile -ExecutionPolicy Bypass -File cameraunlock-core/scripts/update-submodule.ps1"
+sync = "git submodule update --remote cameraunlock-core"
+
+# No -G: let CMake auto-detect the installed Visual Studio generator. Pinning
+# "Visual Studio 17 2022" broke on CI once the windows runner image moved to
+# VS 2026 (VS 17 absent); auto-detect picks whatever VS the machine has.
+#
+# Gated on CMakeFiles/generate.stamp, which CMake writes only once generation has
+# COMPLETED. CMakeCache.txt is not that marker: it is written before project()
+# finishes and long before FetchContent clones MinHook over the network, so a
+# configure that fails at that clone still leaves a cache behind. Testing the
+# cache then skips setup forever, and every later build fails against the
+# half-configured tree with "MSB1009: Project file does not exist" - a message
+# that names neither cause nor cure, and whose only cure is `pixi run clean`.
+#
+# The stamp rather than the generated solution, because the solution's name is
+# the generator's to choose: VS 17 writes .sln and VS 18 writes .slnx, and
+# pinning either reintroduces the generator coupling the auto-detect above exists
+# to avoid.
+setup = { cmd = """
+    powershell -NoProfile -Command "if (-not (Test-Path 'build/CMakeFiles/generate.stamp')) { cmake -B build -A x64 } else { Write-Host 'Build directory configured, skipping setup' -ForegroundColor Yellow }"
+""" }
+
+build = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
+build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
+
+test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
+
+clean = { cmd = """
+    powershell -NoProfile -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; Write-Host 'Build artifacts cleaned' -ForegroundColor Green"
+""" }
+
+clean-all = { cmd = """
+    powershell -NoProfile -Command "foreach ($d in @('build','release')) { if (Test-Path $d) { Remove-Item $d -Recurse -Force } }; Write-Host 'All build artifacts cleaned' -ForegroundColor Green"
+""" }
+
+# Bump the vendored Ultimate ASI Loader copy. Manual, with a commit attached -
+# nothing depends on it; build, package and release consume whatever is
+# committed under vendor/.
+update-deps = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-deps.ps1" }
+
+# The two release gates core ships. Neither had a task, so neither had ever been
+# run from this repo: validate-manifest proves every file the launcher manifest
+# names is actually in the ZIP, and validate-notices proves every bundled
+# component is attributed.
+validate-manifest = "node cameraunlock-core/scripts/validate-manifest.mjs"
+validate-notices = "node cameraunlock-core/scripts/validate-notices.mjs"
+
+# core's fleet linter for the layer this repo owns: install-wrapper drift, the
+# CONFIG BLOCK pairing, CRLF on the .cmd files, action pins, core-pin age,
+# manifest and licence. It had no task, so it had never been run from here.
+#
+# Not in build.yml yet: it currently fails this repo on a README rule that
+# contradicts the README template AGENTS.md mandates, and wiring a knowingly-red
+# step is worse than none. Run it by hand until that is settled upstream.
+conformance = "powershell -NoProfile -ExecutionPolicy Bypass -File cameraunlock-core/scripts/conformance.ps1"
+
+# Package the release ZIPs into release/.
+#
+# Deliberately NOT depends-on test. The tagged build does need the behaviour
+# locks run against it - build.yml skips the "Release vX.Y.Z" commit and core's
+# release-mod.yml has no test step - but hanging them here puts them inside
+# release.ps1's `pixi run package`, which is AFTER four files have been version
+# stamped and before anything is committed. One flake in the socket-timing test
+# would strand a half-bumped tree that the retry then refuses on its own
+# dirty-tree check. release.ps1 runs the tests before it mutates anything.
+package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build"] }
+
+# Full release workflow: stamp version, changelog, package, commit, tag, push.
+# Unattended - `pixi run release minor` is the authorization, there is no prompt.
+release = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1" }
+
+# Build + deploy into the detected game install (dev loop).
+deploy = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy.ps1", depends-on = ["build"] }
+
+install = { depends-on = ["deploy"] }
+uninstall = 'cmd /c scripts\uninstall.cmd'
+
+[dependencies]
+# No pixi-managed deps - relies on system CMake + Visual Studio.

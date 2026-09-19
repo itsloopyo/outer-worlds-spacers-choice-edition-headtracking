@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "mod_info": {
+    "name": "OuterWorldsSpacersChoiceHeadTracking",
+    "version": "0.0.0",
+    "game_id": "outer-worlds-spacers-choice-edition"
+  },
+  "strategy": "AsiLoader",
+  "delivery_mode": "manifest",
+
+  "files": [
+    {
+      "source": "vendor/ultimate-asi-loader/dinput8.dll",
+      "target": "Indiana/Binaries/Win64/xinput1_3.dll"
+    },
+    {
+      "source": "plugins/OuterWorldsSpacersChoiceHeadTracking.asi",
+      "target": "Indiana/Binaries/Win64/OuterWorldsSpacersChoiceHeadTracking.asi"
+    }
+  ],
+
+  "runtime_requirements": [],
+  "dependencies": []
+}

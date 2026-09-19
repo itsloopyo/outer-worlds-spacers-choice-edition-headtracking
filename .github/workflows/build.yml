@@ -1,0 +1,98 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+    # Not a blanket '**.md'. THIRD-PARTY-NOTICES.md is a .md file and the
+    # Validate notices step exists to police it, so ignoring every markdown file
+    # skipped the whole job exactly when the notices changed - an attribution
+    # could be removed, or left stale after a core bump, with no run at all.
+    # GitHub does not support negation inside paths-ignore, so the list names the
+    # docs that genuinely cannot break a gate instead.
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'LICENSE'
+  pull_request:
+    branches: [main]
+    # Not a blanket '**.md'. THIRD-PARTY-NOTICES.md is a .md file and the
+    # Validate notices step exists to police it, so ignoring every markdown file
+    # skipped the whole job exactly when the notices changed - an attribution
+    # could be removed, or left stale after a core bump, with no run at all.
+    # GitHub does not support negation inside paths-ignore, so the list names the
+    # docs that genuinely cannot break a gate instead.
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'LICENSE'
+
+# Read-only. This job checks out, builds and packages; it writes nothing back to
+# the repository, so the token it is handed should not be able to. Releases run
+# under release.yml, which asks for contents:write of its own.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and Validate
+    runs-on: windows-latest
+    # The build clones MinHook over the network at configure time and the UDP
+    # recovery test opens live sockets, so a hang is possible; the 360-minute
+    # default would burn six hours of the account's minutes per push.
+    timeout-minutes: 30
+    if: ${{ !startsWith(github.event.head_commit.message, 'Release v') }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          submodules: recursive
+
+      # C++ toolchain for the pixi `package` task's cmake/msbuild build.
+      - name: Setup Visual Studio environment
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
+
+      # run-install: false - this workspace has zero conda dependencies (pixi is
+      # a task runner only; CMake and MSVC come from the runner image). The
+      # action's post-install `pixi list` errors on an empty environment in
+      # pixi 0.70+.
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
+        with:
+          run-install: false
+
+      # Build + package through the SAME command a developer runs locally. All
+      # build logic lives in the pixi task chain (setup -> build -> package);
+      # the workflow owns none, so local and CI can't drift.
+      - name: Build and package
+        shell: pwsh
+        run: pixi run package
+
+      # The behaviour locks, through the same command a developer runs. These
+      # need no game and no graphics device. This covers branch and PR pushes;
+      # a tag runs release.yml, which delegates to core's reusable workflow.
+      - name: Test
+        shell: pwsh
+        run: pixi run test
+
+      - name: Verify installer was produced
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem release/*-installer.zip -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $zip) {
+            Write-Host "::error::No installer ZIP was produced by 'pixi run package'"
+            exit 1
+          }
+
+      # The two release gates core ships, against the ZIP that was just built:
+      # every file the launcher manifest names is really in it, and every bundled
+      # component is attributed. Neither had a caller before, so neither ran.
+      # One command per step: the pwsh wrapper reports the LAST exit code, so a
+      # failing validator followed by a passing one can leave the step green.
+      - name: Validate manifest
+        shell: pwsh
+        run: pixi run validate-manifest
+
+      - name: Validate notices
+        shell: pwsh
+        run: pixi run validate-notices
