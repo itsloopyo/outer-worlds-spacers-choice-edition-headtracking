@@ -1,6 +1,6 @@
 [workspace]
 name = "outer-worlds-spacers-choice-edition-headtracking"
-version = "0.0.0"
+version = "0.1.0"
 description = "Head tracking mod for Outer Worlds: Spacer's Choice Edition (UE 4.27)"
 license = "MIT"
 license-file = "LICENSE"

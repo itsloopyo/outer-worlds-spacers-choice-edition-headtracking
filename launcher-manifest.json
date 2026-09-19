@@ -2,7 +2,7 @@
   "schema_version": 2,
   "mod_info": {
     "name": "OuterWorldsSpacersChoiceHeadTracking",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "game_id": "outer-worlds-spacers-choice-edition"
   },
   "strategy": "AsiLoader",
