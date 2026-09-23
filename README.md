@@ -143,7 +143,6 @@ Two equivalent binding sets - use whichever your keyboard has:
 | Toggle tracking | `End` | `Ctrl+Shift+Y` |
 | Cycle tracking mode | `Page Up` | `Ctrl+Shift+G` |
 | Toggle yaw mode (world/local) | `Page Down` | `Ctrl+Shift+H` |
-| Cycle ADS mode | `Insert` | `Ctrl+Shift+U` |
 
 There is no recenter key. The mod keeps no center of its own and applies the
 pose it receives exactly as it arrives; centering is done in your tracker, as
@@ -164,26 +163,15 @@ setting.
 3. Rotational tracking disabled, positional tracking enabled
 4. Back to normal
 
-`Insert` / `Ctrl+Shift+U` cycles what happens when you aim down sights. Both
-modes start the same way - raising the sights swings the view onto the point the
-reticle was marking, so your shot lands where you had it lined up - and they
-differ in what happens for the rest of the aim:
+### Aiming down sights
 
-1. **Tracking paused** (default) - the game keeps the camera until you lower
-   the weapon, so turning or leaning your head does nothing and the sight
-   picture is the game's own. Tilting it still rolls the view, in this mode and
-   tracked mode: a tilt moves neither your eye off the barrel nor the aim off
-   the middle of the screen, so there is nothing to hand back to the gun.
-2. **Tracking on** - head tracking carries on from the snapped position, using
-   the game's own reticle.
+Head tracking stays on while you aim. The weapon stays where your mouse or
+controller points it, so with your head turned it sits off to one side with its
+sights still lined up, and your rounds land where those sights point. Head
+movement is scaled to the zoom, so a scope does not magnify it.
 
-The choice is saved to `HeadTracking.ini`, so it survives a restart. The mode
-you switched to is named in `HeadTracking.log`.
-
-These two modes have not been confirmed in a live firefight yet. If `Insert`
-appears to do nothing, check the heartbeat line in `HeadTracking.log`:
-`sights=down` while you are aiming, or `adsProbe=FAILED`, is the case to report
-with the log attached.
+Leaning eases out while the sights are up, because it would move your eye off
+them.
 
 ## Configuration
 
@@ -213,8 +201,8 @@ CenterWindow=1
 
 [Hotkeys]
 ; Virtual-key code for the yaw-mode toggle. 0x22 is Page Down. It
-; cannot be a key this mod already uses - End (0x23), Page Up (0x21)
-; or Insert (0x2D) - because one press would then fire both actions.
+; cannot be a key this mod already uses - End (0x23) or Page Up (0x21)
+; - because one press would then fire both actions.
 ; Set it to one of those and Page Down is kept, with a line saying so
 ; in HeadTracking.log.
 YawModeKey=0x22
@@ -262,11 +250,6 @@ Targets=Crosshair@Reticle/WidgetTree/HUD_BP_C/IndianaGameInstance,ReticuleIntera
 ; direction instead of a point.
 TraceChannel=0
 MaxDistance=20000
-; What head tracking does while the sights are up. Insert (or
-; Ctrl+Shift+U) cycles this in game and writes the new value back here.
-;   paused   - tracking stands down for the aim (default, stock sights)
-;   tracked  - tracking stays live, using the game's reticle
-AdsMode=paused
 
 [Collision]
 ; Stops a lean putting the view inside a wall. Off until the sweep has
@@ -343,6 +326,11 @@ field of view, and the slider takes effect as you drag it, with no restart.
   (or `Ctrl+Shift+H`) to switch yaw modes. World-locked, the default, turns your
   head about the world up-axis so the horizon stays level; camera-local turns it
   about the camera's own up-axis, which leans the horizon instead.
+
+**The weapon is off to one side when I aim down sights**
+
+- Your head is turned: the weapon stays on your aim and you are looking past
+  it. Turn back to it, or move your aim to where you are looking.
 
 **The game window moved when you launched**
 

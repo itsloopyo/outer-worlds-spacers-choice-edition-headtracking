@@ -9,7 +9,6 @@
 #include <windows.h>
 #include <intrin.h>
 
-#include "ads.h"
 #include "ads_gate.h"
 #include "ads_pose.h"
 #include "ads_state.h"
@@ -157,9 +156,8 @@ std::uintptr_t PawnOf(std::uintptr_t controller) {
 // crosshair goes back where the game wants it and the clamp forgets the room it
 // was in, so re-entering gameplay does not carry the last frame's wall in.
 //
-// The entry pose and the ADS transition go with them, so an aim interrupted by a
-// menu or a dialogue re-enters from where the head is when it comes back rather
-// than against a pose captured before the suppression.
+// The lean easing goes with them, so an aim interrupted by a menu or a dialogue
+// does not come back with the lean still eased out.
 void StandDown() {
     ads_pose::Reset();
     AimProjection::Invalidate();
@@ -192,7 +190,7 @@ struct Frame {
     UeVector    CleanEye{0.0f, 0.0f, 0.0f};
 
     // The raw tracker pose, kept for the log line. What reaches the camera is
-    // the ADS-blended, zoom-scaled pose derived from it.
+    // the lean-eased, zoom-scaled pose derived from it.
     float RawYaw = 0.0f, RawPitch = 0.0f, RawRoll = 0.0f;
     float RawOffX = 0.0f, RawOffY = 0.0f, RawOffZ = 0.0f;
 };
@@ -229,13 +227,8 @@ void ResolveFrameOptics(Frame& frame, UeVector* outLocation, UeRotator* outRotat
 
 // What the sights do to this frame's pose, and the zoom factor to scale the
 // result by.
-//
-// The sights are handed the pose BEFORE the zoom compensation, so the entry
-// frame and every frame measured against it are in the same units - fine aim
-// narrows the field of view, and scaling first would measure an aim against an
-// entry recorded at a different magnification.
 ads_pose::Result ShapePose(Frame& frame, const TrackingState& state) {
-    AdsEntryPose::Pose absolute;
+    ads_pose::HeadPose absolute;
     absolute.yaw   = frame.RawYaw;
     absolute.pitch = frame.RawPitch;
     absolute.roll  = frame.RawRoll;
@@ -253,7 +246,7 @@ ads_pose::Result ShapePose(Frame& frame, const TrackingState& state) {
 // Yaw and pitch translate the image across the frame, so both are scaled for
 // zoom; roll rotates it about the view axis by the same angle at every field of
 // view, so roll is left alone.
-FRotator ApplyRotation(const Frame& frame, const AdsEntryPose::Pose& pose,
+FRotator ApplyRotation(const Frame& frame, const ads_pose::HeadPose& pose,
                        UeRotator* outRotation) {
     FRotator tracked = frame.Clean;
     camera_boundary::ApplyHeadPose(
@@ -274,7 +267,7 @@ FRotator ApplyRotation(const Frame& frame, const AdsEntryPose::Pose& pose,
 // Clamp, then apply. The sweep starts from the CLEAN eye - the position the
 // game itself put the camera at - because clamping afterwards would mean
 // reading back a position that is already inside the wall.
-ue::FVector ApplyPosition(const Frame& frame, const AdsEntryPose::Pose& pose,
+ue::FVector ApplyPosition(const Frame& frame, const ads_pose::HeadPose& pose,
                           UeVector* outLocation) {
     ue::FVector applied = camera_boundary::PositionOffset(
         frame.CleanQ, pose.x * frame.Zoom, pose.y * frame.Zoom, pose.z * frame.Zoom);
@@ -348,7 +341,7 @@ void ApplyConversation(Frame& frame, UeVector* outLocation, UeRotator* outRotati
 
     const bool havePosition = g_deps.session->GetPositionOffset(
         frame.RawOffX, frame.RawOffY, frame.RawOffZ);
-    AdsEntryPose::Pose pose;
+    ads_pose::HeadPose pose;
     pose.yaw   = frame.RawYaw;
     pose.pitch = frame.RawPitch;
     pose.roll  = frame.RawRoll;
@@ -442,8 +435,7 @@ void __fastcall Hook(void* self, UeVector* outLocation, UeRotator* outRotation) 
     // true at once.
     const bool aiming = ads_state::IsAimingDownSights(frame.Pawn);
     const TrackingState state = DecideTracking(
-        gate, g_trackingEnabled.load(std::memory_order_relaxed), havePose, aiming,
-        GetAdsMode());
+        gate, g_trackingEnabled.load(std::memory_order_relaxed), havePose, aiming);
 
     diag::HeartbeatInputs beat;
     beat.Call             = frame.Call;

@@ -5,7 +5,6 @@
 
 #include <string>
 
-#include "ads.h"
 
 #include "cameraunlock/data/position_settings.h"
 #include "cameraunlock/math/smoothing_utils.h"
@@ -62,14 +61,6 @@ struct Config {
     int aim_trace_channel = 0;
     float aim_trace_distance = 20000.0f;   // UE units (cm)
 
-    // What head tracking does while the sights are up. Insert, or Ctrl+Shift+U,
-    // cycles it in game and writes the new value back. An unrecognised string -
-    // a typo, or a mode renamed since an older release wrote the file - lands on
-    // the default rather than on whichever branch happens to be last, so a
-    // player never ends up with head tracking through their sights that they did
-    // not ask for.
-    AdsMode ads_mode = kDefaultAdsMode;
-
     // Lean collision. Ships disabled: the sweep calls into the engine every
     // rendered frame the head is off centre, and an unverified trace channel
     // either blocks on nothing or blocks on everything.
@@ -104,10 +95,5 @@ struct Config {
 
 void config_load(const std::string& exe_dir, Config& out);
 void config_write_default_if_missing(const std::string& exe_dir);
-
-// Write the ADS mode back to the INI, leaving every other key and every comment
-// in the file alone. The cycle key is the setting's other half, so a mode picked
-// mid-firefight has to survive the next launch.
-void config_save_ads_mode(AdsMode mode);
 
 }  // namespace tow_ht

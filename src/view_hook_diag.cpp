@@ -9,7 +9,6 @@
 
 #include <windows.h>
 
-#include "ads.h"
 #include "ads_state.h"
 #include "aim_projection.h"
 #include "camera_fov.h"
@@ -118,7 +117,7 @@ void Heartbeat(const HeartbeatInputs& in) {
     const bool data = in.Tracking && in.Tracking->GetRotation(hy, hp, hr);
     const bool layoutOk = ue_reflect::ValidateLayout();
     Log::Line("heartbeat hook=%llu retRVA=0x%08llx enabled=%s udpData=%s "
-              "raw=(Y=%.2f P=%.2f R=%.2f) gameplay=%s%s tracking=%s adsMode=%s "
+              "raw=(Y=%.2f P=%.2f R=%.2f) gameplay=%s%s tracking=%s "
               "sights=%s adsProbe=%s fov=%.1f base=%.1f zoom=%.3f "
               "yawMode=%s injectMode=%d reticle=%s aimTrace=%s leanClamp=%s%s",
         static_cast<unsigned long long>(in.Call),
@@ -126,7 +125,7 @@ void Heartbeat(const HeartbeatInputs& in) {
         in.TrackingEnabled ? "ON" : "OFF",
         data ? "YES" : "NO", hy, hp, hr,
         in.Gate.InGameplay ? "yes" : "no", in.Gate.GateKnown ? "" : " (gate unreadable)",
-        Reason(in.State.verdict), AdsModeValue(GetAdsMode()),
+        Reason(in.State.verdict),
         in.State.aiming ? "up" : "down",
         ads_state::Failed() ? "FAILED" : "ok",
         camera_fov::GameFov(), camera_fov::BaseFov(), camera_fov::ZoomFactor(),

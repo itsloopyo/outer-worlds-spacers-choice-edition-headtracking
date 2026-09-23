@@ -66,7 +66,7 @@ void TestEverySectionReachesItsFields() {
         "[Position]\nEnabled=0\nSensitivityX=2.0\nSensitivityY=3.0\nSensitivityZ=4.0\n"
         "LimitX=0.11\nLimitY=0.12\nLimitZ=0.13\nLimitZBack=0.14\n"
         "[Reticle]\nEnabled=0\nTargets=Dot@HUD\n"
-        "[Aim]\nTraceChannel=3\nMaxDistance=12345\nAdsMode=tracked\n"
+        "[Aim]\nTraceChannel=3\nMaxDistance=12345\n"
         "[Collision]\nEnabled=1\nRadius=20.5\nChannel=7\nReleaseSmoothing=0.75\n"
         "[Dev]\nWidgetDump=1\nWidgetDumpOuter=HUD_BP_C\nPoseLog=1\n"
         "[Diag]\nInjectMode=0\n");
@@ -103,7 +103,6 @@ void TestEverySectionReachesItsFields() {
 
     CHECK(c.aim_trace_channel == 3);
     CHECK_NEAR(c.aim_trace_distance, 12345.0, 1e-3);
-    CHECK(c.ads_mode == ht::AdsMode::Tracked);
 
     CHECK(c.collision_enabled);
     CHECK_NEAR(c.collision_radius, 20.5, 1e-6);
@@ -140,7 +139,6 @@ void TestAbsentKeysKeepTheCompiledDefaults() {
     CHECK_NEAR(c.limit_z_back, fresh.limit_z_back, 1e-6);
     CHECK(c.reticle_enabled == fresh.reticle_enabled);
     CHECK(c.aim_trace_channel == fresh.aim_trace_channel);
-    CHECK(c.ads_mode == ht::kDefaultAdsMode);
     CHECK(c.collision_enabled == fresh.collision_enabled);
     CHECK(c.widget_dump == fresh.widget_dump);
     CHECK(c.pose_log == fresh.pose_log);
@@ -165,7 +163,7 @@ void TestOutOfRangeValuesAreClampedOrFallBackPerKey() {
         "[Network]\nUdpPort=70000\n"
         "[Rotation]\nYawSensitivity=99\nLocalSmoothing=-1\n"
         "[Position]\nLimitX=5.0\n"
-        "[Aim]\nTraceChannel=300\nMaxDistance=0\nAdsMode=nonsense\n"
+        "[Aim]\nTraceChannel=300\nMaxDistance=0\n"
         "[Collision]\nChannel=-4\n"
         "[Hotkeys]\nYawModeKey=0xFFFF\n");
 
@@ -187,10 +185,6 @@ void TestOutOfRangeValuesAreClampedOrFallBackPerKey() {
     CHECK_NEAR_MSG(c.limit_x, 0.5, 1e-6, "a lean limit clamps to its maximum");
     CHECK_NEAR_MSG(c.aim_trace_distance, 1.0, 1e-3,
                    "the cast distance clamps to its one-centimetre minimum");
-
-    // A name that is not one of the three slots.
-    CHECK_MSG(c.ads_mode == ht::kDefaultAdsMode,
-              "an unrecognised AdsMode lands on the default, not the last branch");
 
     RemoveIni(dir);
 }
@@ -223,16 +217,13 @@ void TestTrailingCommentsDoNotChangeAValue() {
     const std::string dir = ScratchDir();
     WriteIni(dir,
         "[Network]\nUdpPort=5151 ; the tracker port\n"
-        "[General]\nEnableOnStartup=1 ; on\n"
-        "[Aim]\nAdsMode=tracked ; keep tracking through the sights\n");
+        "[General]\nEnableOnStartup=1 ; on\n");
 
     ht::Config c;
     ht::config_load(dir, c);
 
     CHECK(c.udp_port == 5151);
     CHECK(c.enable_on_startup);
-    CHECK_MSG(c.ads_mode == ht::AdsMode::Tracked,
-              "AdsMode reads the leading token, so a trailing comment is not part of it");
 
     RemoveIni(dir);
 }
@@ -245,7 +236,7 @@ void TestYawModeKeyCannotTakeAKeyTheModAlreadyBinds() {
     const std::string dir = ScratchDir();
     const ht::Config fresh;
 
-    for (const int taken : {0x23 /*End*/, 0x21 /*PageUp*/, 0x2D /*Insert*/}) {
+    for (const int taken : {0x23 /*End*/, 0x21 /*PageUp*/}) {
         char body[64];
         std::snprintf(body, sizeof(body), "[Hotkeys]\nYawModeKey=0x%X\n", taken);
         WriteIni(dir, body);
@@ -298,7 +289,6 @@ void TestTheWrittenDefaultIniRoundTrips() {
     CHECK_MSG(!c.reticle_targets.empty(), "the shipped ini names the crosshair widgets");
     CHECK(c.aim_trace_channel == fresh.aim_trace_channel);
     CHECK_NEAR(c.aim_trace_distance, fresh.aim_trace_distance, 1e-3);
-    CHECK(c.ads_mode == ht::kDefaultAdsMode);
     CHECK_MSG(!c.collision_enabled, "the lean sweep ships off until it is confirmed");
     CHECK_NEAR(c.collision_radius, fresh.collision_radius, 1e-6);
     CHECK(c.collision_channel == fresh.collision_channel);
@@ -390,19 +380,22 @@ void TestWritingTheDefaultIniLeavesAnExistingOneAlone() {
     RemoveIni(dir);
 }
 
-void TestRemovedAdsModeUsesPaused() {
+// An ini written by an older release still carries the retired AdsMode key. It
+// is ignored, and the keys around it in the same section still load.
+void TestRetiredAdsModeKeyIsIgnored() {
     const std::string dir = ScratchDir();
-    WriteIni(dir, "[Aim]\nAdsMode=marker\n");
-    ht::Config config;
-    ht::config_load(dir, config);
-    CHECK(config.ads_mode == ht::AdsMode::Paused);
+    WriteIni(dir, "[Aim]\nAdsMode=marker\nTraceChannel=3\nMaxDistance=12345\n");
+    ht::Config c;
+    ht::config_load(dir, c);
+    CHECK(c.aim_trace_channel == 3);
+    CHECK_NEAR(c.aim_trace_distance, 12345.0, 1e-3);
     RemoveIni(dir);
 }
 
 }  // namespace
 
 int main() {
-    TestRemovedAdsModeUsesPaused();
+    TestRetiredAdsModeKeyIsIgnored();
     TestEverySectionReachesItsFields();
     TestAbsentKeysKeepTheCompiledDefaults();
     TestOutOfRangeValuesAreClampedOrFallBackPerKey();

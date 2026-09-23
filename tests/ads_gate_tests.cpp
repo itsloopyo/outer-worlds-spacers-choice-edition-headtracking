@@ -4,17 +4,18 @@
 // The verdict walk: whether the head pose reaches the view, and what the frame
 // reports about the sights while it decides.
 //
-// ADS is tested LAST in that walk, so a menu, dialogue or a dead tracker still
-// names its own reason when both are true at once, and no early return may leave
-// the sights flag set - a stale flag through a conversation would hold the pose
-// to the aim it was blended into against a weapon that is not raised.
+// The sights never close the gate. ADS is tested LAST in the walk, so a menu,
+// dialogue or a dead tracker still names its own reason when both are true at
+// once, and no early return may leave the sights flag set - a stale flag would
+// hold the lean eased out against a weapon that is not raised.
+
+#include <initializer_list>
 
 #include "ads_gate.h"
 #include "test_harness.h"
 
 namespace {
 
-using tow_ht::AdsMode;
 using tow_ht::DecideTracking;
 using tow_ht::PoseApplies;
 using tow_ht::Reason;
@@ -30,31 +31,18 @@ Verdict Gameplay() {
     return v;
 }
 
-// `paused` closes the gate on the aim and still reports the sights: the gate
-// says whether tracking applies, the flag says what the weapon is doing.
-void TestPausedClosesTheGateAndStillReportsTheSights() {
-    const auto s = DecideTracking(Gameplay(), true, true, true, AdsMode::Paused);
-    CHECK(s.verdict == TrackingVerdict::AdsSuspended);
+void TestAimingKeepsTrackingActive() {
+    const auto s = DecideTracking(Gameplay(), true, true, true);
+    CHECK_MSG(s.verdict == TrackingVerdict::Active,
+              "raising the sights does not close the gate");
     CHECK(s.aiming);
-    // A pose still reaches the camera, because suspending is an ease-out rather
-    // than a switch. Dropping it on the falling edge would throw the smoothing
-    // state away and swing the view back through the head angle on the way out.
     CHECK(PoseApplies(s.verdict));
 }
 
-void TestTrackedModesStayOpenThroughAnAim() {
-    const auto s = DecideTracking(Gameplay(), true, true, true, AdsMode::Tracked);
+void TestHipFireIsActive() {
+    const auto s = DecideTracking(Gameplay(), true, true, false);
     CHECK(s.verdict == TrackingVerdict::Active);
-    CHECK(s.aiming);
-    CHECK(PoseApplies(s.verdict));
-}
-
-void TestHipFireIsActiveInEveryMode() {
-    for (const AdsMode mode : { AdsMode::Paused, AdsMode::Tracked }) {
-        const auto s = DecideTracking(Gameplay(), true, true, false, mode);
-        CHECK(s.verdict == TrackingVerdict::Active);
-        CHECK(!s.aiming);
-    }
+    CHECK(!s.aiming);
 }
 
 // A menu, the inventory or a loading screen outranks ADS in the reported
@@ -62,26 +50,21 @@ void TestHipFireIsActiveInEveryMode() {
 void TestMenuOutranksAdsAndClearsTheFlag() {
     Verdict gate = Gameplay();
     gate.InGameplay = false;
-    for (const AdsMode mode : { AdsMode::Paused, AdsMode::Tracked }) {
-        const auto s = DecideTracking(gate, true, true, true, mode);
-        CHECK(s.verdict == TrackingVerdict::NotGameplay);
-        CHECK(!s.aiming);
-        CHECK(!PoseApplies(s.verdict));
-    }
+    const auto s = DecideTracking(gate, true, true, true);
+    CHECK(s.verdict == TrackingVerdict::NotGameplay);
+    CHECK(!s.aiming);
+    CHECK(!PoseApplies(s.verdict));
 }
 
 // A conversation raises the cursor like a menu does, but the head pose still
-// reaches the view. It never reports the sights: the pose goes on unshaped, and
-// a stale flag would hold it to an aim against a weapon that is not raised.
+// reaches the view. It never reports the sights.
 void TestConversationAppliesThePoseAndClearsTheSights() {
     Verdict gate = Gameplay();
     gate.InGameplay = false;
     gate.InConversation = true;
-    for (const AdsMode mode : { AdsMode::Paused, AdsMode::Tracked }) {
-        const auto s = DecideTracking(gate, true, true, true, mode);
-        CHECK(s.verdict == TrackingVerdict::Conversation);
-        CHECK(!s.aiming);
-    }
+    const auto s = DecideTracking(gate, true, true, true);
+    CHECK(s.verdict == TrackingVerdict::Conversation);
+    CHECK(!s.aiming);
 }
 
 // A conversation with the tracker silent is the tracker's fault, and says so.
@@ -89,7 +72,7 @@ void TestConversationWithoutATrackerReportsNoTracker() {
     Verdict gate = Gameplay();
     gate.InGameplay = false;
     gate.InConversation = true;
-    const auto s = DecideTracking(gate, true, false, false, AdsMode::Paused);
+    const auto s = DecideTracking(gate, true, false, false);
     CHECK(s.verdict == TrackingVerdict::NoTracker);
 }
 
@@ -98,7 +81,7 @@ void TestMasterToggleOutranksAConversation() {
     Verdict gate = Gameplay();
     gate.InGameplay = false;
     gate.InConversation = true;
-    const auto s = DecideTracking(gate, false, true, false, AdsMode::Paused);
+    const auto s = DecideTracking(gate, false, true, false);
     CHECK(s.verdict == TrackingVerdict::Disabled);
 }
 
@@ -108,7 +91,7 @@ void TestUnreadableGateFailsClosed() {
     Verdict gate;
     gate.InGameplay = false;
     gate.GateKnown = false;
-    const auto s = DecideTracking(gate, true, true, true, AdsMode::Tracked);
+    const auto s = DecideTracking(gate, true, true, true);
     CHECK(s.verdict == TrackingVerdict::NotGameplay);
     CHECK(!s.aiming);
     CHECK(!PoseApplies(s.verdict));
@@ -116,7 +99,7 @@ void TestUnreadableGateFailsClosed() {
 
 // The master toggle outranks everything, and reports its own reason.
 void TestMasterToggleOutranksAds() {
-    const auto s = DecideTracking(Gameplay(), false, true, true, AdsMode::Tracked);
+    const auto s = DecideTracking(Gameplay(), false, true, true);
     CHECK(s.verdict == TrackingVerdict::Disabled);
     CHECK(!s.aiming);
     CHECK(!PoseApplies(s.verdict));
@@ -124,38 +107,25 @@ void TestMasterToggleOutranksAds() {
 
 // No tracker is not an ADS verdict either, and it must not report the sights.
 void TestNoTrackerReportsItsOwnReason() {
-    const auto s = DecideTracking(Gameplay(), true, false, true, AdsMode::Tracked);
+    const auto s = DecideTracking(Gameplay(), true, false, true);
     CHECK(s.verdict == TrackingVerdict::NoTracker);
     CHECK(!s.aiming);
     CHECK(!PoseApplies(s.verdict));
 }
 
 // The state is recomputed from the game every frame rather than latched on an
-// edge, so an exit event that never arrives - an aim released while firing, a
-// state machine that transitions without one - heals on the next frame instead
-// of stranding the player in ADS behaviour.
+// edge, so an exit event that never arrives heals on the next frame.
 void TestAdsHealsWithoutAnExitEdge() {
-    const auto aimed = DecideTracking(Gameplay(), true, true, true, AdsMode::Paused);
-    CHECK(aimed.verdict == TrackingVerdict::AdsSuspended);
-    const auto healed = DecideTracking(Gameplay(), true, true, false, AdsMode::Paused);
+    CHECK(DecideTracking(Gameplay(), true, true, true).aiming);
+    const auto healed = DecideTracking(Gameplay(), true, true, false);
     CHECK(healed.verdict == TrackingVerdict::Active);
     CHECK(!healed.aiming);
-}
-
-// A mode cycled mid-aim is read on the next frame's walk, so it lands on the aim
-// that is already in progress rather than on the next one.
-void TestCyclingMidAimChangesTheVerdict() {
-    CHECK(DecideTracking(Gameplay(), true, true, true, AdsMode::Paused).verdict
-          == TrackingVerdict::AdsSuspended);
-    CHECK(DecideTracking(Gameplay(), true, true, true, AdsMode::Tracked).verdict
-          == TrackingVerdict::Active);
 }
 
 // Every verdict names itself, because the heartbeat line is what a player is
 // asked to send when tracking "just stops".
 void TestEveryVerdictHasAReason() {
     for (const TrackingVerdict v : { TrackingVerdict::Active,
-                                     TrackingVerdict::AdsSuspended,
                                      TrackingVerdict::Disabled,
                                      TrackingVerdict::Conversation,
                                      TrackingVerdict::NotGameplay,
@@ -168,9 +138,8 @@ void TestEveryVerdictHasAReason() {
 }  // namespace
 
 int main() {
-    TestPausedClosesTheGateAndStillReportsTheSights();
-    TestTrackedModesStayOpenThroughAnAim();
-    TestHipFireIsActiveInEveryMode();
+    TestAimingKeepsTrackingActive();
+    TestHipFireIsActive();
     TestMenuOutranksAdsAndClearsTheFlag();
     TestConversationAppliesThePoseAndClearsTheSights();
     TestConversationWithoutATrackerReportsNoTracker();
@@ -179,7 +148,6 @@ int main() {
     TestMasterToggleOutranksAds();
     TestNoTrackerReportsItsOwnReason();
     TestAdsHealsWithoutAnExitEdge();
-    TestCyclingMidAimChangesTheVerdict();
     TestEveryVerdictHasAReason();
 
     return tow_test::Report();

@@ -18,10 +18,6 @@ namespace {
 
 constexpr const char* kIniName = "HeadTracking.ini";
 
-// Held from config_load so config_save_ads_mode can write back to the same file
-// the player edited, rather than guessing at the game directory a second time.
-std::string g_iniPath;
-
 // The crosshair widgets, as read off a running game by the widget probe. Kept
 // here rather than in the Config default so the shipped ini and the fallback
 // are the same string.
@@ -125,14 +121,12 @@ constexpr int kMaxVirtualKey = 0xFE;
 constexpr int kFixedNavKeys[] = {
     0x23,  // End    - toggle tracking
     0x21,  // PageUp - cycle tracking mode
-    0x2D,  // Insert - cycle ADS mode
 };
 
 const char* FixedNavKeyName(int vk) {
     switch (vk) {
         case 0x23: return "End (toggle tracking)";
         case 0x21: return "Page Up (cycle tracking mode)";
-        case 0x2D: return "Insert (cycle ADS mode)";
         default:   return "another binding";
     }
 }
@@ -295,29 +289,6 @@ void ReadAim(const cameraunlock::IniReader& ini, Config& out) {
         out.aim_trace_channel, kMinTraceChannel, kMaxTraceChannel);
     out.aim_trace_distance = read_float(ini, "Aim", "MaxDistance",
         out.aim_trace_distance, kMinAimDistance, kMaxAimDistance);
-
-    // An absent key
-    // is the default rather than an error, so a player upgrading from a release
-    // written before the cycle existed keeps stock sights. A key that is present
-    // and says something else is a typo, and it has to be named: the cycle key
-    // writes the mode back on its first press, so an unreported typo is silently
-    // overwritten by the value the player did not choose.
-    // Parsed from the SAME token the check below judges, so the two cannot
-    // disagree. ParseAdsMode on the raw string requires a whole-string match, so
-    // `AdsMode=tracked ; keep tracking` silently fell back to paused while the
-    // prefix check saw a valid name and said nothing - the value the player
-    // typed discarded, with the one line written to catch that reporting success.
-    // Going through the token gives AdsMode the same trailing-comment handling
-    // the boolean keys already have.
-    const std::string adsRaw = ini.ReadString("Aim", "AdsMode", "");
-    const std::string adsToken = config_sanitize::LeadingToken(adsRaw);
-    out.ads_mode = adsToken.empty() ? kDefaultAdsMode : ParseAdsMode(adsToken.c_str());
-    if (!adsToken.empty() && adsToken != AdsModeValue(AdsMode::Paused) &&
-        adsToken != AdsModeValue(AdsMode::Tracked)) {
-        Log::Line("config: [Aim] AdsMode is not one of %s/%s, using %s",
-                  AdsModeValue(AdsMode::Paused),
-                  AdsModeValue(AdsMode::Tracked), AdsModeValue(out.ads_mode));
-    }
 }
 
 void ReadCollision(const cameraunlock::IniReader& ini, Config& out) {
@@ -377,12 +348,12 @@ void ReadHotkeys(const cameraunlock::IniReader& ini, Config& out) {
 
 void config_load(const std::string& exe_dir, Config& out) {
     out.reticle_targets = kDefaultReticleTargets;
-    g_iniPath = ini_path(exe_dir);
+    const std::string iniPath = ini_path(exe_dir);
     cameraunlock::IniReader ini;
-    if (!ini.Open(g_iniPath)) {
+    if (!ini.Open(iniPath)) {
         Log::Line("config: could not read %s - every setting below is the compiled "
                   "default, and edits to a file elsewhere will not be seen",
-                  g_iniPath.c_str());
+                  iniPath.c_str());
         return;
     }
 
@@ -427,8 +398,8 @@ void config_write_default_if_missing(const std::string& exe_dir) {
         "CenterWindow=1\n\n"
         "[Hotkeys]\n"
         "; Virtual-key code for the yaw-mode toggle. 0x22 is Page Down. It\n"
-        "; cannot be a key this mod already uses - End (0x23), Page Up (0x21)\n"
-        "; or Insert (0x2D) - because one press would then fire both actions.\n"
+        "; cannot be a key this mod already uses - End (0x23) or Page Up (0x21)\n"
+        "; - because one press would then fire both actions.\n"
         "; Set it to one of those and Page Down is kept, with a line saying so\n"
         "; in HeadTracking.log.\n"
         "YawModeKey=0x22\n\n"
@@ -471,12 +442,7 @@ void config_write_default_if_missing(const std::string& exe_dir) {
         "; MaxDistance is in centimeters; past it the crosshair marks the aim\n"
         "; direction instead of a point.\n"
         "TraceChannel=0\n"
-        "MaxDistance=20000\n"
-        "; What head tracking does while the sights are up. Insert (or\n"
-        "; Ctrl+Shift+U) cycles this in game and writes the new value back here.\n"
-        ";   paused   - tracking stands down for the aim (default, stock sights)\n"
-        ";   tracked  - tracking stays live, using the game's reticle\n"
-        "AdsMode=%s\n\n"
+        "MaxDistance=20000\n\n"
         "[Collision]\n"
         "; Stops a lean putting the view inside a wall. Off until the sweep has\n"
         "; been confirmed engaging on real geometry in this game - the log says\n"
@@ -489,18 +455,8 @@ void config_write_default_if_missing(const std::string& exe_dir) {
         "ReleaseSmoothing=0.9\n\n"
         "[Dev]\n"
         "WidgetDump=0\n",
-        kDefaultReticleTargets, AdsModeValue(kDefaultAdsMode));
+        kDefaultReticleTargets);
     std::fclose(f);
-}
-
-void config_save_ads_mode(AdsMode mode) {
-    if (g_iniPath.empty()) return;
-    if (!WritePrivateProfileStringA("Aim", "AdsMode", AdsModeValue(mode),
-                                    g_iniPath.c_str())) {
-        Log::Line("config: could not save AdsMode to %s (error %lu) - the setting "
-                  "applies for this session but will not survive a restart",
-                  g_iniPath.c_str(), GetLastError());
-    }
 }
 
 }  // namespace tow_ht

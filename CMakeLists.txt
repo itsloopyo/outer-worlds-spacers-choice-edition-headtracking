@@ -52,7 +52,6 @@ set(MOD_SOURCES
     src/headtracking_mod.cpp
     src/config.cpp
     src/mod_hotkeys.cpp
-    src/ads.cpp
     src/ads_pose.cpp
     src/ads_state.cpp
     src/view_hook.cpp
@@ -113,7 +112,6 @@ if(TOW_BUILD_TESTS)
 
     add_executable(tow_ads_pose_tests
         tests/ads_pose_tests.cpp
-        src/ads.cpp
         src/ads_pose.cpp
     )
     target_include_directories(tow_ads_pose_tests PRIVATE

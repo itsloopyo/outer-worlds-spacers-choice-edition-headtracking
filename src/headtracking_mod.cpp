@@ -9,7 +9,6 @@
 #include <windows.h>
 #include <psapi.h>
 
-#include "ads.h"
 #include "builds/build_registry.h"
 #include "config.h"
 #include "logging.h"
@@ -173,14 +172,12 @@ void LoadConfig() {
     const std::string exeDirA = ExeDirNarrow();
     config_write_default_if_missing(exeDirA);
     config_load(exeDirA, g_config);
-    // The player's ADS choice, from the file the cycle key writes back to.
-    SetAdsMode(g_config.ads_mode);
     Log::Line("config: udp_port=%d enable=%d local_smoothing=%.2f remote_smoothing=%.2f "
-              "position=%d reticle=%d collision=%d ads_mode=%s",
+              "position=%d reticle=%d collision=%d",
         g_config.udp_port, g_config.enable_on_startup ? 1 : 0,
         g_config.local_smoothing, g_config.remote_smoothing,
         g_config.position_enabled ? 1 : 0, g_config.reticle_enabled ? 1 : 0,
-        g_config.collision_enabled ? 1 : 0, AdsModeValue(g_config.ads_mode));
+        g_config.collision_enabled ? 1 : 0);
 }
 
 // The receiver and the session that consumes it. Nothing is bound here - see
@@ -262,7 +259,7 @@ DWORD WINAPI BootstrapThread(LPVOID) {
     const bool hotkeys = mod_hotkeys::Register(*g_session, g_config);
     Log::Line("init complete. %s Waiting for OpenTrack on UDP %d.",
         hotkeys ? "End=toggle PageUp=tracking mode PageDown=yaw mode "
-                  "Insert=ADS mode (chords Ctrl+Shift+Y/G/H/U)."
+                  "(chords Ctrl+Shift+Y/G/H)."
                 : "NO HOTKEYS - the poller thread did not start, so no key changes "
                   "anything this session; the mod runs on HeadTracking.ini alone.",
         g_config.udp_port);

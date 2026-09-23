@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include "ads.h"
 #include "config.h"
 #include "inject_mode.h"
 #include "logging.h"
@@ -43,18 +42,6 @@ void CycleTrackingMode() {
                                                   : "position only");
 }
 
-// The mode the frame walk reads once per frame, so the change lands on the aim
-// that is already in progress rather than on the next one. Saved as it is
-// cycled, because the choice is the player's and a firefight is a bad place to
-// lose it.
-//
-void CycleAdsMode() {
-    const AdsMode next = NextAdsModeTwoSlot(GetAdsMode());
-    SetAdsMode(next);
-    config_save_ads_mode(next);
-    Log::Line("hotkey: %s", AdsModeToast(next));
-}
-
 void ToggleYawMode() {
     const bool nv = !view_hook::WorldSpaceYaw();
     view_hook::SetWorldSpaceYaw(nv);
@@ -81,21 +68,15 @@ bool Register(Session& session, const Config& config) {
     // Page Down unless [Hotkeys] YawModeKey says otherwise; the rest of the
     // cluster is fixed so the same action sits on the same key in every mod.
     g_poller->AddHotkey(config.yaw_mode_key, NavGuarded([] { ToggleYawMode(); }));
-    g_poller->AddHotkey(0x2D /*Insert*/,   NavGuarded([] { CycleAdsMode(); }));
 
-    // Ctrl+Shift chord alternatives (Y/G/H/U cluster).
+    // Ctrl+Shift chord alternatives (Y/G/H cluster).
     g_poller->AddHotkey(0x59 /*Y*/, ChordGuarded([] { ToggleTracking(); }));
     g_poller->AddHotkey(0x47 /*G*/, ChordGuarded([] { CycleTrackingMode(); }));
     g_poller->AddHotkey(0x48 /*H*/, ChordGuarded([] { ToggleYawMode(); }));
-    g_poller->AddHotkey(0x55 /*U*/, ChordGuarded([] { CycleAdsMode(); }));
 
     // Dev only, and on the one chord left over rather than a nav key: cycling
     // which GetPlayerViewPoint caller is injected is how the render path is
-    // re-identified after a patch.
-    //
-    // One chord, not the pair it started as. Ctrl+Shift+U is the fleet's ADS
-    // slot and is registered above, so leaving the dev "next" on it would fire
-    // both handlers on one press. CycleInject wraps, so the whole range is still
+    // re-identified after a patch. CycleInject wraps, so the whole range is
     // reachable from Ctrl+Shift+J alone.
     g_poller->AddHotkey(0x4A /*J*/, ChordGuarded([] { CycleInject(); }));
 
@@ -116,7 +97,7 @@ bool Register(Session& session, const Config& config) {
     }
     if (!started) {
         Log::Line("WARN: the hotkey poller thread did not start, so End, Page Up, "
-                  "Page Down, Insert and the Ctrl+Shift chords do nothing this "
+                  "Page Down and the Ctrl+Shift chords do nothing this "
                   "session. Tracking runs on whatever HeadTracking.ini says.");
         return false;
     }

@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "ads.h"
 #include "game_state.h"
 
 // Whether the head pose reaches the view this frame, and why not when it does
@@ -22,15 +21,8 @@
 namespace tow_ht {
 
 enum class TrackingVerdict {
-    // The head pose is applied in full.
+    // The head pose is applied in full, sights up or not.
     Active,
-    // The sights are up in `paused` mode. The pose is still fed to the camera,
-    // because it is being EASED off rather than switched off - see AdsFade - and
-    // once it has gone the frame is the frame the game would have drawn on its
-    // own, bar the head tilt: roll is left out of the fade in every mode, since
-    // it moves neither the eye off the barrel nor the aim off the middle of the
-    // frame (cameraunlock/ads/ads_blend.h).
-    AdsSuspended,
     // The master toggle is off.
     Disabled,
     // A conversation. The pose is applied without the sights logic, since
@@ -47,18 +39,17 @@ enum class TrackingVerdict {
 
 struct TrackingState {
     TrackingVerdict verdict = TrackingVerdict::NotGameplay;
-    // The sights are up. Reported in EVERY mode, including `paused` where the
-    // gate is closed: the gate says whether tracking applies, this says what the
-    // weapon is doing so the pose transition can follow it.
+    // The sights are up. It never closes the gate: it only tells the lean
+    // easing what the weapon is doing (ads_pose.h).
     bool aiming = false;
 };
 
 // ADS is tested LAST, so a menu, a loading screen or a dead tracker still names
 // its own reason when both are true at once - and every earlier return leaves
-// `aiming` false so a menu cannot keep an ADS transition active.
+// `aiming` false so a menu cannot keep the lean eased out.
 inline TrackingState DecideTracking(const game_state::Verdict& gate,
                                     bool trackingEnabled, bool havePose,
-                                    bool aiming, AdsMode mode) {
+                                    bool aiming) {
     TrackingState s;
     if (!trackingEnabled) {
         s.verdict = TrackingVerdict::Disabled;
@@ -76,24 +67,18 @@ inline TrackingState DecideTracking(const game_state::Verdict& gate,
         return s;
     }
     s.aiming = aiming;
-    s.verdict = (aiming && AdsSuspendsTracking(mode)) ? TrackingVerdict::AdsSuspended
-                                                      : TrackingVerdict::Active;
+    s.verdict = TrackingVerdict::Active;
     return s;
 }
 
-// A pose is fed to the camera in both of the first two verdicts. AdsSuspended
-// needs it because suspending is an ease-out, not a switch: dropping the pose on
-// the falling edge into ADS would throw away the smoothing state, and lowering
-// the weapon would then swing the view back through the whole head angle.
 inline bool PoseApplies(TrackingVerdict verdict) {
-    return verdict == TrackingVerdict::Active || verdict == TrackingVerdict::AdsSuspended;
+    return verdict == TrackingVerdict::Active;
 }
 
 // One line for the log and the heartbeat. Never null.
 inline const char* Reason(TrackingVerdict verdict) {
     switch (verdict) {
         case TrackingVerdict::Active:       return "gameplay";
-        case TrackingVerdict::AdsSuspended: return "sights up (ADS mode: paused)";
         case TrackingVerdict::Disabled:     return "tracking toggled off";
         case TrackingVerdict::Conversation: return "conversation";
         case TrackingVerdict::NotGameplay:  return "menu or loading";
