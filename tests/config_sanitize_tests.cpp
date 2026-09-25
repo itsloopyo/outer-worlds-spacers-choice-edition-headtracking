@@ -5,9 +5,9 @@
 //
 // The ini is a user-editable file, so it is a system boundary, and two of the
 // readers behind it hand back something that looks valid for input that is not:
-// strtod accepts "nan" and "inf" as floats, and GetPrivateProfileIntA answers 0
-// - not the default - for a key that is present but unparseable. Neither
-// failure is visible downstream. A NaN sensitivity comes out of the processor
+// strtod accepts "nan" and "inf" as floats, and the Windows profile API's
+// integer read answers 0 - not the default - for a key that is present but
+// unparseable. Neither failure is visible downstream. A NaN sensitivity comes out of the processor
 // as a NaN FRotator and is written into engine memory through the camera hook;
 // a zeroed [Diag] InjectMode is the diagnostic mode that hands every
 // GetPlayerViewPoint caller the head pose, which is the aim decoupling switched
@@ -110,10 +110,10 @@ void TestParseIntSeparatesGarbageFromZero() {
     CHECK(out == -999);
 }
 
-// The bool boundary. IniReader::ReadBool answers the caller's DEFAULT for
-// anything outside its allow-list and says nothing, so this parse is what stands
-// between a hand-edited ini and a setting that silently reads back as its
-// opposite.
+// The bool boundary. The old reader's plain bool read answers the caller's
+// DEFAULT for anything outside its allow-list and says nothing, so this parse is
+// what stands between a hand-edited ini and a setting that silently reads back
+// as its opposite.
 void TestParseBoolAcceptsEverySpellingTheIniHasEverAccepted() {
     bool out = false;
     for (const char* t : {"1", "true", "TRUE", "True", "yes", "YES", "on", "ON"}) {

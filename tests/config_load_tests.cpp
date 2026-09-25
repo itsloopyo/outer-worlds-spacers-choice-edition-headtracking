@@ -259,9 +259,9 @@ void TestYawModeKeyCannotTakeAKeyTheModAlreadyBinds() {
 // default AND say so, rather than being accepted as whatever its leading
 // characters came to.
 //
-// IniReader::ReadFloat is a prefix parse, and the range check downstream only
-// speaks when it changes the value - so a key whose prefix lands inside its own
-// range used to be accepted in total silence. `RemoteSmoothing=0,15` is the case
+// The old reader's plain float read is a prefix parse, and the range check
+// downstream only speaks when it changes the value - so a key whose prefix lands
+// inside its own range used to be accepted in total silence. `RemoteSmoothing=0,15` is the case
 // that matters: a decimal comma is what a German or French keyboard writes, the
 // prefix is 0, and 0 is a legal smoothing value.
 void TestPartiallyParsedFloatsFallBack() {
