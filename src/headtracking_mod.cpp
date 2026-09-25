@@ -224,7 +224,7 @@ bool InstallHooks() {
     // the diagnostic modes without a rebuild.
     if (g_config.inject_mode >= 0 && g_config.inject_mode < inject::kModeCount) {
         view_hook::SetInjectMode(g_config.inject_mode);
-        Log::Line("config: [Diag] InjectMode=%d overrides the profile default",
+        Log::Line("config: [Dev] InjectMode=%d overrides the profile default",
             g_config.inject_mode);
     }
     return true;

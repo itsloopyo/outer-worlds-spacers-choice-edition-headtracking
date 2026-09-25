@@ -218,7 +218,7 @@ void LogClampUnavailable() {
     const std::uint64_t now = GetTickCount64();
     if (s_lastSample != 0 && now - s_lastSample < kStateSampleMs) return;
     s_lastSample = now;
-    Log::Line("lean-clamp: [Collision] Enabled is set but the engine's reflection "
+    Log::Line("lean-clamp: [Position] CollisionEnabled=true is set but the engine's reflection "
               "layout is not proved on this build, so the sweep cannot run and the "
               "lean is UNCLAMPED");
 }
