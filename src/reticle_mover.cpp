@@ -14,13 +14,13 @@
 // and not the pixels: the setter is what invalidates the Slate widget
 // underneath.
 //
-// The names are configuration rather than constants. A HUD widget's name lives
-// in a cooked Blueprint asset, not in the exe, so it can only be read off a
-// running game - widget_probe.cpp is what reads it, and [Reticle] Targets is
-// where the answer goes. An empty list leaves the game's crosshair alone, which
-// is the honest default before that pass has been run against a build.
+// A HUD widget's name lives in a cooked Blueprint asset, not in the exe, so it
+// can only be read off a running game - widget_probe.cpp is what reads it, and
+// kCrosshairWidgets (crosshair_widgets.h) is where the answer goes.
 
 #include "reticle_mover.h"
+
+#include "crosshair_widgets.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -397,9 +397,9 @@ bool ObjectArrayReadable() {
     return false;
 }
 
-// The [Reticle] Targets spec: comma-separated `Name` or `Name@Outer`, with
-// surrounding blanks trimmed and empty items dropped. A pure parse of the ini
-// string, kept apart from the state it goes on to replace.
+// A widget list: comma-separated `Name` or `Name@Outer`, with surrounding
+// blanks trimmed and empty items dropped. A pure parse of the string, kept
+// apart from the state it goes on to replace.
 std::vector<Target> ParseTargets(const char* spec) {
     std::vector<Target> targets;
     if (!spec) return targets;
@@ -484,17 +484,10 @@ void PushCurrentOffset() {
 
 void SetUncappedLog(bool on) { g_uncappedLog = on; }
 
-void SetTargets(const char* spec) {
-    g_targets = ParseTargets(spec);
+void Initialize() {
+    g_targets = ParseTargets(kCrosshairWidgets);
     g_widgets.assign(g_targets.size(), Widget{});
     g_nameIds.assign(g_targets.size(), 0u);
-    if (g_targets.empty()) {
-        Log::Line("reticle: no [Reticle] Targets configured - the game's crosshair "
-                  "stays where the game puts it, which is screen centre. With "
-                  "tracking live that is not where the round goes; run the widget "
-                  "probe to name the crosshair widget.");
-        return;
-    }
     for (const Target& t : g_targets)
         Log::Line("reticle: target %s%s%s", t.Name.c_str(),
             t.Outer.empty() ? "" : " under ", t.Outer.c_str());

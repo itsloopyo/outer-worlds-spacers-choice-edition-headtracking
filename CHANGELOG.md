@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- The tracking mode (`Page Up` / `Ctrl+Shift+G`) and the yaw mode (`Page Down` / `Ctrl+Shift+H`) you pick are saved to `HeadTracking.ini` and come back at the next start. `End` / `Ctrl+Shift+Y` still changes the current session only; `EnableOnStartup` decides whether tracking starts on.
+- Every hotkey can be rebound or removed in `HeadTracking.ini`, the Ctrl+Shift chords included. The diagnostic `Ctrl+Shift+J` is `InjectModeKey` under `[Dev]`.
+
+### Changed
+
+- `HeadTracking.ini` has a new layout. The first time this version starts, it converts the file once into the new layout and keeps the file as it was beside it as `HeadTracking.ini.pre-canonical`. `HeadTracking.ini.pre-canonical.last`, when present, is the file as it was before the most recent conversion: the mod converts the file again when it finds the older layout later, for example after an older version of the mod rewrote it.
+- Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
+  - A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
+  - Reticle settings, and a key that toggled the reticle.
+  - The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+- Hotkeys are written as key names, and each hotkey lists every key that triggers it, the Ctrl+Shift chord included: `ToggleKey=End, Ctrl+Shift+Y`.
+- An older version of the mod may not read the new layout correctly. It reads a key that moved as its own default, and it can misread a hotkey or another value that is now written as a name. To go back to an older version, first copy `HeadTracking.ini.pre-canonical` back over `HeadTracking.ini`, which restores the old file.
+- Settings that moved, which the conversion carries over: `LocalSmoothing` and `RemoteSmoothing` to `[Smoothing]`; `[Position] Enabled` to `PositionEnabled` beside a new `RotationEnabled`, the pair the tracking mode is saved as; `LimitX`, `LimitY`, `LimitZ` and `LimitZBack` to `PositionLimitX` and so on, with `LimitY` written to both `PositionLimitY` and `PositionLimitYDown`, since it set the lean both up and down; `[Collision] Radius`, `Channel` and `ReleaseSmoothing` to `CollisionMargin`, `CollisionChannel` and `CollisionReleaseSmoothing` under `[Position]`; `[Aim] TraceChannel` to `AimTraceChannel`; `[Diag] InjectMode` to `[Dev] InjectMode`.
+- The lean collision sweep's switch, `[Collision] Enabled`, is now `CollisionEnabled` under `[Position]`. The sweep is still unverified in this game, so a file that turned it on is converted with it off; set `CollisionEnabled=true` to turn it back on.
+- `uninstall.cmd` leaves `HeadTracking.ini` in place, so your settings survive a reinstall. It used to delete it.
+- Head tracking stays on while you aim down sights, and the lean eases out while the sights are up. The ADS mode cycle is gone: `[Aim] AdsMode` is no longer read, and `Insert` and `Ctrl+Shift+U` do nothing (c7a9c9b).
+
+### Removed
+
+- The reticle settings, `[Reticle] Enabled` and `[Reticle] Targets`. The game's crosshair always moves to where the shot lands, and the mod names the crosshair widgets itself.
+- The sensitivity and axis inversion settings: `YawSensitivity`, `PitchSensitivity`, `RollSensitivity`, `InvertYaw`, `InvertPitch` and `InvertRoll` under `[Rotation]`, and `SensitivityX`, `SensitivityY` and `SensitivityZ` under `[Position]`. Set these in your tracker app instead.
+- With these settings at their shipped defaults the camera moves as it did before.
+
 ## [0.1.0] - 2026-09-19
 
 ### Other

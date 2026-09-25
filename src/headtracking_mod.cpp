@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <system_error>
 
 #include <windows.h>
 #include <psapi.h>
@@ -27,7 +28,6 @@ namespace tow_ht {
 namespace {
 
 namespace ue = ::cameraunlock::unreal;
-using cameraunlock::TrackingMode;
 
 // Whether GetModuleHandleExW's PIN succeeded. The no-teardown design in
 // dllmain.cpp rests on it, so it is recorded and reported rather than assumed.
@@ -38,26 +38,10 @@ std::unique_ptr<cameraunlock::UdpReceiver> g_receiver;
 std::unique_ptr<Session> g_session;
 
 void ApplyConfigToSession() {
-    cameraunlock::SensitivitySettings sens;
-    sens.yaw          = g_config.yaw_sensitivity;
-    sens.pitch        = g_config.pitch_sensitivity;
-    sens.roll         = g_config.roll_sensitivity;
-    sens.invert_yaw   = g_config.invert_yaw;
-    sens.invert_pitch = g_config.invert_pitch;
-    sens.invert_roll  = g_config.invert_roll;
-    g_session->GetProcessor().SetSensitivity(sens);
-
     auto& ps = g_session->GetPositionProcessor().GetSettings();
-    ps.sensitivity_x = g_config.position_sensitivity_x;
-    ps.sensitivity_y = g_config.position_sensitivity_y;
-    ps.sensitivity_z = g_config.position_sensitivity_z;
     ps.limit_x       = g_config.limit_x;
-    // The clamp is [-limit_y_down, +limit_y] and limit_y_down carries its own
-    // default, so mirror the one configured vertical limit the way
-    // PositionSettings::Symmetric does. Left unset, raising LimitY widened the
-    // upward budget only and downward travel stayed pinned at 0.20m.
     ps.limit_y       = g_config.limit_y;
-    ps.limit_y_down  = g_config.limit_y;
+    ps.limit_y_down  = g_config.limit_y_down;
     ps.limit_z       = g_config.limit_z;
     ps.limit_z_back  = g_config.limit_z_back;
 
@@ -66,39 +50,46 @@ void ApplyConfigToSession() {
     g_session->SetLocalSmoothing(g_config.local_smoothing);
     g_session->SetRemoteSmoothing(g_config.remote_smoothing);
 
-    g_session->SetMode(g_config.position_enabled
-        ? TrackingMode::RotationAndPosition
-        : TrackingMode::RotationOnly);
+    // The table reads a pair that names no mode as its defaults, so this always
+    // holds a mode.
+    g_session->SetMode(
+        cameraunlock::DecodeTrackingMode(g_config.rotation_enabled, g_config.position_enabled).value());
 }
 
-// Both of these check GetModuleFileName's return value rather than the buffer
-// alone, and that return carries two distinct failures. Zero means nothing was
-// written, and the buffer would then be read as a C string over whatever the
-// stack happened to hold - the log path and the ini path both come from here, so
-// that is an unbounded read feeding a garbage path. MAX_PATH means the exe path
-// did not fit and what came back is a TRUNCATED directory, which is not this
-// game's directory and is where the ini would then be written.
-//
-// Either way the answer is the process working directory, which is what the
-// no-separator branch already returned and what a game started through an ASI
-// loader normally runs in.
+// The process working directory as a full path, with no trailing separator.
+// The config owner refuses a relative path, so "." will not do. The loop covers
+// another thread moving the working directory between a read that came back too
+// short and the next one.
+std::wstring WorkingDirectory() {
+    std::wstring dir(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD length = GetCurrentDirectoryW(static_cast<DWORD>(dir.size()), &dir[0]);
+        if (length == 0) {
+            throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
+                                    "GetCurrentDirectoryW");
+        }
+        const bool fits = length < dir.size();
+        dir.resize(length);
+        if (!fits) continue;
+        if (dir.back() == L'\\' || dir.back() == L'/') dir.pop_back();
+        return dir;
+    }
+}
+
+// GetModuleFileName's return value carries two distinct failures. Zero means
+// nothing was written, and the buffer would then be read as a C string over
+// whatever the stack happened to hold. MAX_PATH means the exe path did not fit
+// and what came back is a TRUNCATED directory, which is not this game's
+// directory. Either way the answer is the process working directory, which is
+// where earlier builds' "." put the ini and the log, and what a game started
+// through an ASI loader normally runs in.
 std::wstring ExeDir() {
     wchar_t path[MAX_PATH] = {};
     const DWORD written = GetModuleFileNameW(nullptr, path, MAX_PATH);
-    if (written == 0 || written >= MAX_PATH) return L".";
+    if (written == 0 || written >= MAX_PATH) return WorkingDirectory();
     std::wstring s(path, written);
     const auto slash = s.find_last_of(L"\\/");
-    return slash == std::wstring::npos ? L"." : s.substr(0, slash);
-}
-
-// Narrow sibling of ExeDir for the ANSI IniReader (GetPrivateProfile*A).
-std::string ExeDirNarrow() {
-    char path[MAX_PATH] = {};
-    const DWORD written = GetModuleFileNameA(nullptr, path, MAX_PATH);
-    if (written == 0 || written >= MAX_PATH) return ".";
-    std::string s(path, written);
-    const auto slash = s.find_last_of("\\/");
-    return slash == std::string::npos ? "." : s.substr(0, slash);
+    return slash == std::wstring::npos ? WorkingDirectory() : s.substr(0, slash);
 }
 
 // Log::Open keeps the outgoing session as HeadTracking.prev.log and truncates
@@ -167,16 +158,26 @@ bool SelectBuildProfile() {
     return true;
 }
 
-// Read the ini, write one if there is none, and say what came back.
+// The collision channel is written into the sweep's parameter frame as one
+// byte, and the canonical format takes any whole number for it, so a value
+// outside a byte would name another channel without a word. The sweep stays off
+// instead, and the log says why.
+constexpr int kMaxCollisionChannel = 255;
+
+// Read, convert or create the ini, and say what came back.
 void LoadConfig() {
-    const std::string exeDirA = ExeDirNarrow();
-    config_write_default_if_missing(exeDirA);
-    config_load(exeDirA, g_config);
+    g_config = config::Load(ExeDir());
+    if (g_config.collision_enabled &&
+        (g_config.collision_channel < 0 || g_config.collision_channel > kMaxCollisionChannel)) {
+        Log::Line("config: [Position] CollisionChannel=%d is not a collision channel (0-%d), so the "
+                  "lean sweep stays off this session", g_config.collision_channel, kMaxCollisionChannel);
+        g_config.collision_enabled = false;
+    }
     Log::Line("config: udp_port=%d enable=%d local_smoothing=%.2f remote_smoothing=%.2f "
-              "position=%d reticle=%d collision=%d",
+              "rotation=%d position=%d collision=%d",
         g_config.udp_port, g_config.enable_on_startup ? 1 : 0,
         g_config.local_smoothing, g_config.remote_smoothing,
-        g_config.position_enabled ? 1 : 0, g_config.reticle_enabled ? 1 : 0,
+        g_config.rotation_enabled ? 1 : 0, g_config.position_enabled ? 1 : 0,
         g_config.collision_enabled ? 1 : 0);
 }
 
@@ -212,7 +213,7 @@ void BindTracker() {
 // MinHook refuses, which it has already said why in the log.
 bool InstallHooks() {
     ReticleMover::SetUncappedLog(g_config.pose_log);
-    ReticleMover::SetTargets(g_config.reticle_targets.c_str());
+    ReticleMover::Initialize();
 
     view_hook::Dependencies deps;
     deps.session = g_session.get();
@@ -257,12 +258,16 @@ DWORD WINAPI BootstrapThread(LPVOID) {
     // did not start takes every binding with it. Without this the line below
     // would go on naming four keys and four chords that do nothing.
     const bool hotkeys = mod_hotkeys::Register(*g_session, g_config);
-    Log::Line("init complete. %s Waiting for OpenTrack on UDP %d.",
-        hotkeys ? "End=toggle PageUp=tracking mode PageDown=yaw mode "
-                  "(chords Ctrl+Shift+Y/G/H)."
-                : "NO HOTKEYS - the poller thread did not start, so no key changes "
-                  "anything this session; the mod runs on HeadTracking.ini alone.",
-        g_config.udp_port);
+    if (hotkeys) {
+        Log::Line("init complete. toggle=[%s] trackingmode=[%s] yawmode=[%s]. Waiting for "
+                  "OpenTrack on UDP %d.",
+            g_config.toggle_key.c_str(), g_config.cycle_tracking_mode_key.c_str(),
+            g_config.yaw_mode_key.c_str(), g_config.udp_port);
+    } else {
+        Log::Line("init complete. NO HOTKEYS - the poller thread did not start, so no key "
+                  "changes anything this session; the mod runs on HeadTracking.ini alone. "
+                  "Waiting for OpenTrack on UDP %d.", g_config.udp_port);
+    }
 
     // Last, because it waits for the engine to bring a window up and hold it
     // still, and nothing else in the bootstrap should queue behind that. It only

@@ -161,15 +161,11 @@ std::uintptr_t PawnOf(std::uintptr_t controller) {
 void StandDown() {
     ads_pose::Reset();
     AimProjection::Invalidate();
-    // Only when the mover is the thing that put them there. With [Reticle]
-    // Enabled=0 this was still dispatching SetRenderTranslation into the game's
-    // widgets every suppressed frame, for a feature the player switched off.
-    //
     // Park rather than Tick: a suppressed frame pushes a zero offset through the
     // widgets already held, so the full object-table walk that re-finds them
     // would be a couple of milliseconds spent on an answer this frame cannot
     // use - every two seconds, for as long as the player sits in a menu.
-    if (g_deps.config->reticle_enabled) ReticleMover::Park();
+    ReticleMover::Park();
     g_leanClamp.Reset();
 }
 
@@ -312,16 +308,13 @@ aim_trace::Result UpdateAimAndReticle(const Frame& frame, const ue::FQuat4d& tra
                             static_cast<float>(cleanFwdD.Y),
                             static_cast<float>(cleanFwdD.Z)};
 
-    const bool moveWidgets = g_deps.config->reticle_enabled;
-    const bool wantAimPoint =
-        frame.ReflectionOk && moveWidgets;
     aim_trace::Result aim;
-    if (wantAimPoint)
+    if (frame.ReflectionOk)
         aim = aim_trace::Cast(frame.Pawn, frame.CleanEye, cleanFwd,
                               g_deps.config->aim_trace_distance);
     AimProjection::Update(trackedEye, trackedQ, cleanFwd, leanApplied, aim.Valid,
                           aim.Hit, aim.Point, true);
-    if (moveWidgets) ReticleMover::Tick();
+    ReticleMover::Tick();
     return aim;
 }
 
@@ -337,7 +330,7 @@ aim_trace::Result UpdateAimAndReticle(const Frame& frame, const ue::FQuat4d& tra
 void ApplyConversation(Frame& frame, UeVector* outLocation, UeRotator* outRotation) {
     ads_pose::Reset();
     AimProjection::Invalidate();
-    if (g_deps.config->reticle_enabled) ReticleMover::Park();
+    ReticleMover::Park();
 
     const bool havePosition = g_deps.session->GetPositionOffset(
         frame.RawOffX, frame.RawOffY, frame.RawOffZ);
@@ -515,7 +508,7 @@ bool Install(const Dependencies& deps) {
         g_trackingEnabled.store(deps.config->enable_on_startup);
         g_worldSpaceYaw.store(deps.config->world_space_yaw);
         aim_trace::SetTraceChannel(deps.config->aim_trace_channel);
-        lean_trace::SetRadius(deps.config->collision_radius);
+        lean_trace::SetRadius(deps.config->collision_margin);
         lean_trace::SetChannel(deps.config->collision_channel);
         cameraunlock::camera::LeanClampSettings ls;
         // The swept sphere's radius IS the standoff - the hit location comes

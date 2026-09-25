@@ -5,3 +5,4 @@
 *.dll binary
 *.zip binary
 tests/config_differential/data/** -text
+config/HeadTracking.ini -text

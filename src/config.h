@@ -5,9 +5,11 @@
 
 #include <string>
 
-
+#include "cameraunlock/config/config_concepts.g.h"
+#include "cameraunlock/config/config_owner.h"
 #include "cameraunlock/data/position_settings.h"
 #include "cameraunlock/math/smoothing_utils.h"
+#include "cameraunlock/tracking/tracking_mode.h"
 
 namespace tow_ht {
 
@@ -17,22 +19,17 @@ struct Config {
 
     // true: head yaw turns the view about the WORLD up-axis, so the horizon
     // stays level however far the mouse has pitched the camera. false: it turns
-    // about the camera's own up-axis, which leans the horizon on a pitched
-    // turn. Page Down switches it for the session; this is what the mod comes
-    // up in.
+    // about the camera's own up-axis, which leans the horizon on a pitched turn.
     bool world_space_yaw = true;
+
+    // The tracking mode at startup, as the pair the mode hotkey saves.
+    bool rotation_enabled = true;
+    bool position_enabled = true;
 
     // Centre the game window on the work area of its monitor at startup. Only a
     // windowed game is ever moved; fullscreen and borderless are left alone. A
     // player who deliberately positioned their window turns this off.
     bool center_window = true;
-
-    float yaw_sensitivity = 1.0f;
-    float pitch_sensitivity = 1.0f;
-    float roll_sensitivity = 1.0f;
-    bool invert_yaw = false;
-    bool invert_pitch = false;
-    bool invert_roll = false;
 
     // Smoothing is picked per connection from the packet source address: a
     // tracker running on this machine (loopback) uses local_smoothing, a remote
@@ -40,37 +37,38 @@ struct Config {
     float local_smoothing = static_cast<float>(cameraunlock::math::kDefaultLocalSmoothing);
     float remote_smoothing = static_cast<float>(cameraunlock::math::kDefaultRemoteSmoothing);
 
-    bool position_enabled = true;
-    float position_sensitivity_x = 1.0f;
-    float position_sensitivity_y = 1.0f;
-    float position_sensitivity_z = 1.0f;
     float limit_x = cameraunlock::PositionSettings{}.limit_x;
     float limit_y = cameraunlock::PositionSettings{}.limit_y;
+    float limit_y_down = cameraunlock::PositionSettings{}.limit_y_down;
     float limit_z = cameraunlock::PositionSettings{}.limit_z;
     float limit_z_back = cameraunlock::PositionSettings{}.limit_z_back;
 
-    // Move the game's own crosshair to where the round lands. The widget names
-    // are configuration because a HUD widget's name lives in a cooked Blueprint
-    // asset rather than the exe, so it can only be read off a running game.
-    bool reticle_enabled = true;
-    std::string reticle_targets;
-
-    // The aim cast that gives the crosshair its live depth. The channel is a
-    // project setting rather than an engine constant, so it is a value to try
-    // and read back out of the log.
-    int aim_trace_channel = 0;
-    float aim_trace_distance = 20000.0f;   // UE units (cm)
-
-    // Lean collision. Ships disabled: the sweep calls into the engine every
+    // Lean collision. Off by default: the sweep calls into the engine every
     // rendered frame the head is off centre, and an unverified trace channel
     // either blocks on nothing or blocks on everything.
     bool collision_enabled = false;
-    float collision_radius = 12.0f;        // cm; must exceed the camera near clip
+    // Centimetres, the engine's unit. The swept sphere's radius, so it has to
+    // exceed the camera's near clip distance to keep a wall from being cut away.
+    float collision_margin = 12.0f;
     int collision_channel = 0;
     float collision_release_smoothing = 0.9f;
 
+    std::string toggle_key =
+        cameraunlock::config::schema::ConceptTraits<cameraunlock::config::schema::Concept::ToggleKey>::kCanonicalDefault;
+    std::string cycle_tracking_mode_key = cameraunlock::config::schema::ConceptTraits<
+        cameraunlock::config::schema::Concept::CycleTrackingModeKey>::kCanonicalDefault;
+    std::string yaw_mode_key =
+        cameraunlock::config::schema::ConceptTraits<cameraunlock::config::schema::Concept::YawModeKey>::kCanonicalDefault;
+
+    // The aim cast that gives the crosshair its live depth. The channel is a
+    // project setting rather than an engine constant, so it is a value to try
+    // and read back out of the log. It is written into the cast's parameter
+    // frame as one byte.
+    int aim_trace_channel = 0;
+    float aim_trace_distance = 20000.0f;   // UE units (cm)
+
     // Log every live UMG object whose name looks like a crosshair, with its
-    // outer chain. How the names for reticle_targets are found.
+    // outer chain. How the names in ReticleMover's widget list are found.
     bool widget_dump = false;
     // With WidgetDump on, also list everything nested under an outer whose name
     // contains this - the whole widget tree of one HUD.
@@ -85,15 +83,35 @@ struct Config {
     // summary of every distinct GetPlayerViewPoint return address, which is how
     // the render-path caller is (re-)identified after a patch.
     int inject_mode = -1;
-
-    // Virtual-key code for the yaw-mode toggle, Page Down by default. The one
-    // binding with an ini override: YawModeKey is part of the shared config
-    // schema, the rest of the nav cluster is fixed across the fleet so the same
-    // action sits on the same key in every mod.
-    int yaw_mode_key = 0x22;
+    // Cycles the inject mode in game, for the same job.
+    std::string inject_mode_key = "Ctrl+Shift+J";
 };
 
-void config_load(const std::string& exe_dir, Config& out);
-void config_write_default_if_missing(const std::string& exe_dir);
-
 }  // namespace tow_ht
+
+// HeadTracking.ini, next to the game exe, in cameraunlock-core's canonical
+// config format. One ConfigOwner reads and writes it; nothing else in the mod
+// touches the file.
+namespace tow_ht::config {
+
+// The rows of HeadTracking.ini.
+cameraunlock::config::ConfigTable<Config> Table();
+
+// What the renderer writes above the rows.
+cameraunlock::config::RenderHeader Header();
+
+// The owner's options for the file at `path`: the table, the frozen legacy
+// import and the header.
+cameraunlock::config::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& path);
+
+// Reads, converts or creates HeadTracking.ini in `exe_dir`, logs what the owner
+// reports, and returns the settings the session runs on. Call once, from the
+// bootstrap thread, with the log open. `exe_dir` must be a full path.
+Config Load(const std::wstring& exe_dir);
+
+// Save the value a hotkey has just applied. The session keeps it whether or not
+// the save succeeds; a failed save is logged. Called from the hotkey thread.
+void SaveWorldSpaceYaw(bool world_space_yaw);
+void SaveTrackingMode(cameraunlock::TrackingMode mode);
+
+}  // namespace tow_ht::config

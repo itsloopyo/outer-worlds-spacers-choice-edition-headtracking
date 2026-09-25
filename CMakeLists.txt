@@ -52,6 +52,7 @@ set(MOD_SOURCES
     src/headtracking_mod.cpp
     src/config.cpp
     src/legacy_config/legacy_config.cpp
+    src/legacy_config/legacy_import.cpp
     src/mod_hotkeys.cpp
     src/ads_pose.cpp
     src/ads_state.cpp
@@ -155,13 +156,11 @@ if(TOW_BUILD_TESTS)
     )
     add_test(NAME tow_config_sanitize_tests COMMAND tow_config_sanitize_tests)
 
-    # The wiring above the value guards: every ini key reaching the field it
-    # names, an absent key keeping its compiled default, and the ini a fresh
-    # install gets reading back as the defaults it documents. Runs against a
-    # temporary directory, so it needs no game install.
+    # The frozen pre-canonical reader above the value guards: every old ini key
+    # reaching the field it names, and an absent key keeping its compiled
+    # default. Runs against a temporary directory, so it needs no game install.
     add_executable(tow_config_load_tests
         tests/config_load_tests.cpp
-        src/config.cpp
         src/legacy_config/legacy_config.cpp
     )
     target_include_directories(tow_config_load_tests PRIVATE
@@ -171,6 +170,23 @@ if(TOW_BUILD_TESTS)
     )
     target_link_libraries(tow_config_load_tests PRIVATE cameraunlock)
     add_test(NAME tow_config_load_tests COMMAND tow_config_load_tests)
+
+    # The canonical config, the committed file and the toggles' saves. Also the
+    # renderer behind `pixi run render-config` (--render-config <path>).
+    add_executable(tow_config_tests
+        tests/config_tests.cpp
+        src/config.cpp
+        src/legacy_config/legacy_config.cpp
+        src/legacy_config/legacy_import.cpp
+    )
+    target_include_directories(tow_config_tests PRIVATE
+        src
+        tests
+        cameraunlock-core/cpp/include
+    )
+    target_link_libraries(tow_config_tests PRIVATE cameraunlock)
+    target_compile_definitions(tow_config_tests PRIVATE TOW_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    add_test(NAME tow_config_tests COMMAND tow_config_tests)
 
     # The differential test for the config conversion. The oracle is the reader
     # of the newest published build, compiled from its own sources with the mod's
@@ -195,7 +211,9 @@ if(TOW_BUILD_TESTS)
 
     add_executable(tow_config_differential_tests
         tests/config_differential/differential_tests.cpp
+        src/config.cpp
         src/legacy_config/legacy_config.cpp
+        src/legacy_config/legacy_import.cpp
     )
     target_include_directories(tow_config_differential_tests PRIVATE
         src

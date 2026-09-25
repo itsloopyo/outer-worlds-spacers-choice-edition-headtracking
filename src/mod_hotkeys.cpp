@@ -3,29 +3,32 @@
 
 #include "mod_hotkeys.h"
 
-#include <system_error>
-
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <vector>
 
 #include "config.h"
 #include "inject_mode.h"
 #include "logging.h"
 #include "view_hook.h"
 
-#include "cameraunlock/input/chord_hotkeys.h"
 #include "cameraunlock/input/hotkey_poller.h"
+#include "cameraunlock/input/key_binding_registration.h"
+#include "cameraunlock/input/key_bindings.h"
 
 namespace tow_ht::mod_hotkeys {
 
 namespace {
 
 using cameraunlock::TrackingMode;
-using cameraunlock::input::ChordGuarded;
-using cameraunlock::input::NavGuarded;
+using cameraunlock::input::KeyBinding;
 
 std::unique_ptr<cameraunlock::input::HotkeyPoller> g_poller;
 Session* g_session = nullptr;
 
+// End changes this session only; EnableOnStartup decides the next one.
 void ToggleTracking() {
     const bool nv = !view_hook::TrackingEnabled();
     view_hook::SetTrackingEnabled(nv);
@@ -40,12 +43,14 @@ void CycleTrackingMode() {
         next == TrackingMode::RotationAndPosition ? "rotation + position"
         : next == TrackingMode::RotationOnly      ? "rotation only"
                                                   : "position only");
+    config::SaveTrackingMode(next);
 }
 
 void ToggleYawMode() {
     const bool nv = !view_hook::WorldSpaceYaw();
     view_hook::SetWorldSpaceYaw(nv);
     Log::Line("hotkey: yaw mode %s", nv ? "world" : "local");
+    config::SaveWorldSpaceYaw(nv);
 }
 
 // Dev: re-confirm the render caller in game after a patch without a rebuild.
@@ -55,30 +60,33 @@ void CycleInject() {
     Log::Line("hotkey: inject mode -> %d", m);
 }
 
+// The table's hotkey codec only lets through a list this parser reads.
+std::vector<KeyBinding> Bindings(const char* key, const std::string& list) {
+    const cameraunlock::input::KeyBindingsParseResult parsed = cameraunlock::input::ParseKeyBindings(list);
+    if (!parsed.ok()) throw std::logic_error(std::string(key) + "='" + list + "': " + parsed.error);
+    return parsed.bindings;
+}
+
 }  // namespace
 
 bool Register(Session& session, const Config& config) {
     g_session = &session;
     g_poller = std::make_unique<cameraunlock::input::HotkeyPoller>();
 
-    // Nav-cluster (AGENTS.md default bindings). NavGuarded so a chord press
-    // cannot also drive the nav path and fire the action twice.
-    g_poller->AddHotkey(0x23 /*End*/,      NavGuarded([] { ToggleTracking(); }));
-    g_poller->AddHotkey(0x21 /*PageUp*/,   NavGuarded([] { CycleTrackingMode(); }));
-    // Page Down unless [Hotkeys] YawModeKey says otherwise; the rest of the
-    // cluster is fixed so the same action sits on the same key in every mod.
-    g_poller->AddHotkey(config.yaw_mode_key, NavGuarded([] { ToggleYawMode(); }));
-
-    // Ctrl+Shift chord alternatives (Y/G/H cluster).
-    g_poller->AddHotkey(0x59 /*Y*/, ChordGuarded([] { ToggleTracking(); }));
-    g_poller->AddHotkey(0x47 /*G*/, ChordGuarded([] { CycleTrackingMode(); }));
-    g_poller->AddHotkey(0x48 /*H*/, ChordGuarded([] { ToggleYawMode(); }));
-
-    // Dev only, and on the one chord left over rather than a nav key: cycling
-    // which GetPlayerViewPoint caller is injected is how the render path is
-    // re-identified after a patch. CycleInject wraps, so the whole range is
-    // reachable from Ctrl+Shift+J alone.
-    g_poller->AddHotkey(0x4A /*J*/, ChordGuarded([] { CycleInject(); }));
+    // Each list from HeadTracking.ini. A binding without modifiers does not fire
+    // while Ctrl and Shift are both held, so a chord reaches only the action
+    // that names it.
+    cameraunlock::input::RegisterKeyBindings(*g_poller, Bindings("ToggleKey", config.toggle_key),
+                                             [] { ToggleTracking(); });
+    cameraunlock::input::RegisterKeyBindings(
+        *g_poller, Bindings("CycleTrackingModeKey", config.cycle_tracking_mode_key), [] { CycleTrackingMode(); });
+    cameraunlock::input::RegisterKeyBindings(*g_poller, Bindings("YawModeKey", config.yaw_mode_key),
+                                             [] { ToggleYawMode(); });
+    // Dev only: cycling which GetPlayerViewPoint caller is injected is how the
+    // render path is re-identified after a patch. CycleInject wraps, so the
+    // whole range is reachable from one key.
+    cameraunlock::input::RegisterKeyBindings(*g_poller, Bindings("InjectModeKey", config.inject_mode_key),
+                                             [] { CycleInject(); });
 
     // Checked, not fired and forgotten: without the polling thread every binding
     // registered above is dead and nothing else in the process would notice.
@@ -96,9 +104,9 @@ bool Register(Session& session, const Config& config) {
         started = false;
     }
     if (!started) {
-        Log::Line("WARN: the hotkey poller thread did not start, so End, Page Up, "
-                  "Page Down and the Ctrl+Shift chords do nothing this "
-                  "session. Tracking runs on whatever HeadTracking.ini says.");
+        Log::Line("WARN: the hotkey poller thread did not start, so no hotkey does "
+                  "anything this session. Tracking runs on whatever "
+                  "HeadTracking.ini says.");
         return false;
     }
     return true;

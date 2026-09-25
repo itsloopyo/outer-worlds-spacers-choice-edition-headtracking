@@ -34,6 +34,11 @@ setup = { cmd = """
 build = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 
+# Rewrites config/HeadTracking.ini, the committed canonical config, from the
+# table after a change to a row, a comment or a default, then re-encodes any
+# launcher seed from it. tow_config_tests fails while the two differ.
+render-config = { cmd = "build/Release/tow_config_tests.exe --render-config config/HeadTracking.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build"] }
+
 # The behaviour locks and the config conversion's differential test. No game and
 # no hooks; the INI suites read files through GetPrivateProfileString, so they
 # need Windows.

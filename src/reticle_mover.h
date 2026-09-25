@@ -22,10 +22,9 @@ void Tick();
 // the walk interval has long since come round by the time gameplay resumes.
 void Park();
 
-// Names of the widgets to move, comma-separated, from the config. Each entry is
-// `Name` or `Name@OuterSubstring`. Empty leaves the crosshair alone entirely,
-// which is what ships until the names have been read off a running game.
-void SetTargets(const char* spec);
+// Load the list of crosshair widgets to move (kCrosshairWidgets in
+// crosshair_widgets.h). Call once, before the first Tick.
+void Initialize();
 
 // Keep writing the per-push offset line instead of stopping after the first
 // few, for a measuring session. [Dev] PoseLog.

@@ -3,153 +3,139 @@
 
 #include "config.h"
 
-#include <cstdio>
-#include <windows.h>
+#include <functional>
+#include <memory>
+#include <string>
+#include <utility>
 
-#include "legacy_config/legacy_config.h"
+#include "inject_mode.h"
+#include "legacy_config/legacy_import.h"
 #include "logging.h"
 
-namespace tow_ht {
+#include "cameraunlock/config/hotkey_codec.h"
+#include "cameraunlock/config/value_codecs.h"
+
+namespace tow_ht::config {
 
 namespace {
 
-constexpr const char* kIniName = "HeadTracking.ini";
+namespace cfg = ::cameraunlock::config;
+using cfg::schema::Concept;
 
-std::string ini_path(const std::string& exe_dir) {
-    return exe_dir + "\\" + kIniName;
+constexpr const wchar_t* kIniName = L"HeadTracking.ini";
+
+// data/games.json's display_name for outer-worlds-spacers-choice-edition.
+constexpr const char* kDisplayName = "The Outer Worlds: Spacer's Choice Edition";
+
+// The trace channel is written into the cast's parameter frame as one byte.
+constexpr double kMaxTraceChannel = 255;
+constexpr double kMinAimDistanceCm = 1.0;
+constexpr double kMaxAimDistanceCm = 1000000.0;
+
+std::unique_ptr<cfg::ConfigOwner<Config>> g_owner;
+
+void Save(const char* rows, const std::function<void(Config&)>& change) {
+    const cfg::ConfigSaveResult result = g_owner->Save(change);
+    if (result.status == cfg::ConfigSaveStatus::Saved) return;
+    Log::Line("config: %s %s: %s", rows, cfg::ConfigSaveStatusName(result.status), result.reason.c_str());
+    for (const std::string& line : result.log) Log::Line("config: %s", line.c_str());
 }
 
 }  // namespace
 
-void config_load(const std::string& exe_dir, Config& out) {
-    legacy::Config read;
-    legacy::Load(exe_dir, read);
-
-    out.udp_port = read.udp_port;
-    out.enable_on_startup = read.enable_on_startup;
-    out.world_space_yaw = read.world_space_yaw;
-    out.center_window = read.center_window;
-    out.yaw_sensitivity = read.yaw_sensitivity;
-    out.pitch_sensitivity = read.pitch_sensitivity;
-    out.roll_sensitivity = read.roll_sensitivity;
-    out.invert_yaw = read.invert_yaw;
-    out.invert_pitch = read.invert_pitch;
-    out.invert_roll = read.invert_roll;
-    out.local_smoothing = read.local_smoothing;
-    out.remote_smoothing = read.remote_smoothing;
-    out.position_enabled = read.position_enabled;
-    out.position_sensitivity_x = read.position_sensitivity_x;
-    out.position_sensitivity_y = read.position_sensitivity_y;
-    out.position_sensitivity_z = read.position_sensitivity_z;
-    out.limit_x = read.limit_x;
-    out.limit_y = read.limit_y;
-    out.limit_z = read.limit_z;
-    out.limit_z_back = read.limit_z_back;
-    out.reticle_enabled = read.reticle_enabled;
-    out.reticle_targets = read.reticle_targets;
-    out.aim_trace_channel = read.aim_trace_channel;
-    out.aim_trace_distance = read.aim_trace_distance;
-    out.collision_enabled = read.collision_enabled;
-    out.collision_radius = read.collision_radius;
-    out.collision_channel = read.collision_channel;
-    out.collision_release_smoothing = read.collision_release_smoothing;
-    out.widget_dump = read.widget_dump;
-    out.widget_dump_outer = read.widget_dump_outer;
-    out.pose_log = read.pose_log;
-    out.inject_mode = read.inject_mode;
-    out.yaw_mode_key = read.yaw_mode_key;
+cfg::ConfigTable<Config> Table() {
+    cfg::ConfigTable<Config> table;
+    table.Concept<Concept::UdpPort>(&Config::udp_port)
+        .Concept<Concept::EnableOnStartup>(&Config::enable_on_startup)
+        .Concept<Concept::WorldSpaceYaw>(&Config::world_space_yaw)
+        .Writable()
+        .Concept<Concept::RotationEnabled>(&Config::rotation_enabled)
+        .Writable()
+        .Local("General", "CenterWindow", &Config::center_window, cfg::BoolCodec(),
+               "true: centre the game window on the work area of its monitor at startup. Only a\n"
+               "windowed game is moved; fullscreen and borderless are left alone.")
+        .Concept<Concept::LocalSmoothing>(&Config::local_smoothing)
+        .Concept<Concept::RemoteSmoothing>(&Config::remote_smoothing)
+        .Concept<Concept::PositionEnabled>(&Config::position_enabled)
+        .Writable()
+        .Concept<Concept::PositionLimitX>(&Config::limit_x)
+        .Concept<Concept::PositionLimitY>(&Config::limit_y)
+        .Concept<Concept::PositionLimitYDown>(&Config::limit_y_down)
+        .Concept<Concept::PositionLimitZ>(&Config::limit_z)
+        .Concept<Concept::PositionLimitZBack>(&Config::limit_z_back)
+        .Concept<Concept::CollisionEnabled>(&Config::collision_enabled)
+        .Concept<Concept::CollisionMargin>(&Config::collision_margin)
+        .Comment("How far the view is held off a wall when you lean into it, in centimetres.")
+        .Concept<Concept::CollisionChannel>(&Config::collision_channel)
+        .Engine()
+        .Concept<Concept::CollisionReleaseSmoothing>(&Config::collision_release_smoothing)
+        .Concept<Concept::ToggleKey>(&Config::toggle_key)
+        .Concept<Concept::CycleTrackingModeKey>(&Config::cycle_tracking_mode_key)
+        .Concept<Concept::YawModeKey>(&Config::yaw_mode_key)
+        .Local("Aim", "AimTraceChannel", &Config::aim_trace_channel, cfg::IntCodec<int>(),
+               "Which of the game's collision channels the aim cast tests against, 0 to 255. The cast\n"
+               "finds how far away the point you aim at is, so the crosshair sits where the shot lands.")
+        .Range(0, kMaxTraceChannel)
+        .Engine()
+        .Local("Aim", "MaxDistance", &Config::aim_trace_distance, cfg::FloatingCodec<float>(),
+               "How far the aim cast reaches, in centimetres. Past it the crosshair marks the aim\n"
+               "direction instead of a point.")
+        .Range(kMinAimDistanceCm, kMaxAimDistanceCm)
+        .Local("Dev", "WidgetDump", &Config::widget_dump, cfg::BoolCodec(),
+               "true: write every widget whose name looks like a crosshair to HeadTracking.log, with\n"
+               "the objects it sits under. For finding the crosshair after a game patch.")
+        .Local("Dev", "WidgetDumpOuter", &Config::widget_dump_outer, cfg::StringCodec(),
+               "With WidgetDump on, also list every widget nested under an object whose name holds\n"
+               "this text.")
+        .Local("Dev", "PoseLog", &Config::pose_log, cfg::BoolCodec(),
+               "true: keep writing the head pose to HeadTracking.log every two seconds, instead of\n"
+               "stopping after the first twenty lines. For measuring.")
+        .Local("Dev", "InjectMode", &Config::inject_mode, cfg::IntCodec<int>(),
+               "Which of the game's view point callers is given the head pose, in place of the one\n"
+               "this build picks. -1 keeps the build's choice. The others are for finding the render\n"
+               "path after a game patch, and 0 hands every caller the head pose, which turns aim\n"
+               "decoupling off.")
+        .Range(-1, inject::kModeCount - 1)
+        .Local("Dev", "InjectModeKey", &Config::inject_mode_key, cfg::HotkeyCodec(),
+               "Steps through the inject modes in game, for the same job. The next start goes back\n"
+               "to InjectMode.");
+    return table;
 }
 
-void config_write_default_if_missing(const std::string& exe_dir) {
-    const std::string p = ini_path(exe_dir);
-    if (GetFileAttributesA(p.c_str()) != INVALID_FILE_ATTRIBUTES) return;
-
-    FILE* f = nullptr;
-    const errno_t err = fopen_s(&f, p.c_str(), "w");
-    if (!f) {
-        Log::Line("config: could not create %s (error %d) - the mod runs on its "
-                  "compiled defaults and there is no file to edit",
-                  p.c_str(), static_cast<int>(err));
-        return;
-    }
-    std::fprintf(f,
-        "; Outer Worlds: Spacer's Choice Edition Head Tracking - configuration\n"
-        "; Edit values, restart the game to apply.\n\n"
-        "[Network]\n"
-        "UdpPort=4242\n\n"
-        "[General]\n"
-        "EnableOnStartup=1\n"
-        "; Yaw mode the mod starts in. 1 = horizon-locked: head yaw turns the\n"
-        "; view about the world up-axis, so the horizon stays level however far\n"
-        "; the mouse has pitched the camera. 0 = camera-local, which leans the\n"
-        "; horizon on a pitched turn. Page Down switches it for the session.\n"
-        "WorldSpaceYaw=1\n"
-        "; Centre the game window on your monitor's work area at startup. Only\n"
-        "; ever moves a windowed game - fullscreen and borderless are left alone,\n"
-        "; and so is a window already centred there. Set to 0 to keep the window\n"
-        "; wherever the game or you put it.\n"
-        "CenterWindow=1\n\n"
-        "[Hotkeys]\n"
-        "; Virtual-key code for the yaw-mode toggle. 0x22 is Page Down. It\n"
-        "; cannot be a key this mod already uses - End (0x23) or Page Up (0x21)\n"
-        "; - because one press would then fire both actions.\n"
-        "; Set it to one of those and Page Down is kept, with a line saying so\n"
-        "; in HeadTracking.log.\n"
-        "YawModeKey=0x22\n\n"
-        "[Rotation]\n"
-        "YawSensitivity=1.0\n"
-        "PitchSensitivity=1.0\n"
-        "RollSensitivity=1.0\n"
-        "InvertYaw=0\n"
-        "InvertPitch=0\n"
-        "InvertRoll=0\n"
-        "; Smoothing is picked per connection from the packet source address and\n"
-        "; covers rotation and position alike. 0.0 = none, 1.0 = heavy.\n"
-        "; LocalSmoothing:  tracker runs on this machine (loopback).\n"
-        "; RemoteSmoothing: tracker is a remote device on the network.\n"
-        "LocalSmoothing=0.0\n"
-        "RemoteSmoothing=0.15\n\n"
-        "[Position]\n"
-        "Enabled=1\n"
-        "SensitivityX=1.0\n"
-        "SensitivityY=1.0\n"
-        "SensitivityZ=1.0\n"
-        "; Lean limits in meters. Z is asymmetric: more room to lean forward\n"
-        "; than back, so the view does not end up inside your own character.\n"
-        "LimitX=0.30\n"
-        "LimitY=0.20\n"
-        "LimitZ=0.40\n"
-        "LimitZBack=0.10\n\n"
-        "[Reticle]\n"
-        "; The game draws its crosshair at the middle of the picture, which stops\n"
-        "; being where the round goes once the head moves the view. These are the\n"
-        "; UMG widgets moved to meet the shot. Names come from a running game -\n"
-        "; set [Dev] WidgetDump=1 and read HeadTracking.log. Name or Name@Outer,\n"
-        "; comma separated, where Outer is text found in the widget's chain of\n"
-        "; parent objects joined with / (for example Reticle/WidgetTree).\n"
-        "Enabled=1\n"
-        "Targets=%s\n\n"
-        "[Aim]\n"
-        "; The cast that gives the crosshair the live distance to what you are\n"
-        "; pointing at. Without it the mark is right at one range only.\n"
-        "; MaxDistance is in centimeters; past it the crosshair marks the aim\n"
-        "; direction instead of a point.\n"
-        "TraceChannel=0\n"
-        "MaxDistance=20000\n\n"
-        "[Collision]\n"
-        "; Stops a lean putting the view inside a wall. Off until the sweep has\n"
-        "; been confirmed engaging on real geometry in this game - the log says\n"
-        "; so on every contact. Radius is how far off a surface the eye is held,\n"
-        "; in centimeters. ReleaseSmoothing is how quickly the lean reopens once\n"
-        "; an obstruction clears; tightening is always instant.\n"
-        "Enabled=0\n"
-        "Radius=12.0\n"
-        "Channel=0\n"
-        "ReleaseSmoothing=0.9\n\n"
-        "[Dev]\n"
-        "WidgetDump=0\n",
-        legacy::kDefaultReticleTargets);
-    std::fclose(f);
+cfg::RenderHeader Header() {
+    cfg::RenderHeader header;
+    header.display_name = kDisplayName;
+    return header;
 }
 
-}  // namespace tow_ht
+cfg::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& path) {
+    cfg::ConfigOwnerOptions<Config> options;
+    options.path = path;
+    options.table = Table();
+    options.import = legacy::Import();
+    options.header = Header();
+    return options;
+}
+
+Config Load(const std::wstring& exe_dir) {
+    g_owner = std::make_unique<cfg::ConfigOwner<Config>>(OwnerOptions(exe_dir + L"\\" + kIniName));
+    const cfg::ConfigLoadResult<Config> result = g_owner->Load();
+    for (const std::string& line : result.log) Log::Line("config: %s", line.c_str());
+    if (!result.reason.empty()) Log::Line("config: %s", result.reason.c_str());
+    Log::Line("config: %s", cfg::ConfigLoadStatusName(result.status));
+    return result.config;
+}
+
+void SaveWorldSpaceYaw(bool world_space_yaw) {
+    Save("[General] WorldSpaceYaw", [world_space_yaw](Config& c) { c.world_space_yaw = world_space_yaw; });
+}
+
+void SaveTrackingMode(cameraunlock::TrackingMode mode) {
+    const cameraunlock::TrackingModeChannels channels = cameraunlock::EncodeTrackingMode(mode);
+    Save("[General] RotationEnabled and [Position] PositionEnabled", [channels](Config& c) {
+        c.rotation_enabled = channels.rotation_enabled;
+        c.position_enabled = channels.position_enabled;
+    });
+}
+
+}  // namespace tow_ht::config

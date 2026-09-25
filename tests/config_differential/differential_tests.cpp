@@ -3,15 +3,24 @@
 
 // The differential test for the HeadTracking.ini conversion.
 //
-// Two readings of every input, and what may differ between them:
+// Three readings of every input, and what may differ between them:
 //
 //   Oracle     the reader of the newest published build (v0.1.0, 1014f66, core
 //              c480d8a), compiled from its own sources (oracle_api.h)
 //   Import     the frozen reader in src/legacy_config/
+//   Migration  the config owner converting the file through the frozen import,
+//              then the canonical reader and table on what it wrote
 //
 // Comparison 1, oracle against import, is what a player sees change that the
 // conversion did not cause: commits since the published build that change how
 // the file is read. Each one is listed below with its commit.
+//
+// Comparison 2, import against migration, is the proof for the conversion. The
+// differences it allows are the approved changes the import records: a
+// sensitivity or inversion set away from the shipped value (pose_shaping), the
+// crosshair switch and widget list (reticle), and the lean sweep's switch, which
+// shipped off pending verification (follows_default). No default moved, so the
+// no-file input may not differ either.
 //
 // Inputs: the published build's first-run file (it shipped no config and seeded
 // none, so every player's file started as that one), no file, an empty file,
@@ -32,12 +41,18 @@
 #include <utility>
 #include <vector>
 
+#include "config.h"
+#include "crosshair_widgets.h"
 #include "legacy_config/legacy_config.h"
+#include "legacy_config/legacy_import.h"
 #include "oracle_api.h"
 #include "test_harness.h"
 
+#include "cameraunlock/config/canonical_ini.h"
+#include "cameraunlock/config/config_owner.h"
 #include "cameraunlock/config/legacy_import.h"
 #include "cameraunlock/config/testing/ini_mutations.h"
+#include "cameraunlock/input/key_bindings.h"
 #include "cameraunlock/tracking/tracking_mode.h"
 
 namespace {
@@ -90,6 +105,8 @@ constexpr Pinned kPinned[] = {
     {"src/inject_mode.h", "81578f46ae65c45fd8957553f3ffa88a63170f90384faedc979a0eca1ee49c36"},
     {"src/legacy_config/config_sanitize.h", "d579938044e5b2d55864b70017f29a72aedd32100f94cc91fce33a254161c06c"},
     {"src/legacy_config/legacy_config.h", "674c3f6b14bf663246347d8ea00f8b52d0b84b36d510eeccb70937c0fde9d3ed"},
+    {"src/legacy_config/legacy_import.h", "ea1cb7dacb07d0a5a4192d7ac7c5920119a635febe62e64d5dec6684fe2d584a"},
+    {"src/legacy_config/legacy_import.cpp", "dfff6e531da1ead88af71186db569835e65283747d2a9cfd7316ed0a4b571e46"},
     {"src/legacy_config/legacy_config.cpp", "6841b38f9f69c9113827ca291519c9319ea7ffd06db4a46e613069e52cbf0cb8"},
 };
 
@@ -167,6 +184,25 @@ public:
 
     const std::string& dir() const { return dir_; }
     std::string ini() const { return dir_ + "\\HeadTracking.ini"; }
+    std::wstring wini() const {
+        const std::string path = ini();
+        return std::wstring(path.begin(), path.end());
+    }
+
+    // Every file in the folder, by name, with its bytes.
+    std::vector<std::pair<std::string, std::string>> Listing() const {
+        std::vector<std::pair<std::string, std::string>> files;
+        WIN32_FIND_DATAA found;
+        const HANDLE h = FindFirstFileA((dir_ + "\\*").c_str(), &found);
+        if (h == INVALID_HANDLE_VALUE) return files;
+        do {
+            if (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            files.push_back({found.cFileName, ReadFileBytes(dir_ + "\\" + found.cFileName)});
+        } while (FindNextFileA(h, &found));
+        FindClose(h);
+        std::sort(files.begin(), files.end());
+        return files;
+    }
 
     void Write(const std::string& bytes) const {
         std::ofstream out(ini(), std::ios::binary | std::ios::trunc);
@@ -384,46 +420,9 @@ std::string DataPath(const char* name) {
 // WriteDefaultIfMissing and committed.
 std::string FirstRunFile() { return ReadFileBytes(DataPath("v0.1.0-first-run.ini")); }
 
-// Every key the frozen reader reads. The retired [Rotation] and [Position]
-// Smoothing keys are not here: the reader only names them in the log, and no
-// value of theirs reached anything.
-std::vector<cfg::LegacyKey> CorpusReads() {
-    return {
-        {"Network", "UdpPort"},
-        {"General", "EnableOnStartup"},
-        {"General", "WorldSpaceYaw"},
-        {"General", "CenterWindow"},
-        {"Rotation", "YawSensitivity"},
-        {"Rotation", "PitchSensitivity"},
-        {"Rotation", "RollSensitivity"},
-        {"Rotation", "InvertYaw"},
-        {"Rotation", "InvertPitch"},
-        {"Rotation", "InvertRoll"},
-        {"Rotation", "LocalSmoothing"},
-        {"Rotation", "RemoteSmoothing"},
-        {"Position", "Enabled"},
-        {"Position", "SensitivityX"},
-        {"Position", "SensitivityY"},
-        {"Position", "SensitivityZ"},
-        {"Position", "LimitX"},
-        {"Position", "LimitY"},
-        {"Position", "LimitZ"},
-        {"Position", "LimitZBack"},
-        {"Reticle", "Enabled"},
-        {"Reticle", "Targets"},
-        {"Aim", "TraceChannel"},
-        {"Aim", "MaxDistance"},
-        {"Collision", "Enabled"},
-        {"Collision", "Radius"},
-        {"Collision", "Channel"},
-        {"Collision", "ReleaseSmoothing"},
-        {"Dev", "WidgetDump"},
-        {"Dev", "WidgetDumpOuter"},
-        {"Dev", "PoseLog"},
-        {"Diag", "InjectMode"},
-        {"Hotkeys", "YawModeKey"},
-    };
-}
+// The generator refuses the call when these and the descriptors name different
+// keys, so the corpus covers every key the import reads.
+std::vector<cfg::LegacyKey> CorpusReads() { return tow_ht::legacy::Import().keys; }
 
 // How the corpus varies each key the frozen reader reads. The out-of-range
 // values sit either side of the range each key is clamped or refused to.
@@ -536,6 +535,221 @@ void OracleAgainstImport(const std::vector<Input>& inputs) {
     std::printf("comparison 1: %d inputs\n", compared);
 }
 
+Observed ObserveCanonical(const tow_ht::Config& c) {
+    Observed o;
+    o.udp_port = c.udp_port;
+    o.start_enabled = c.enable_on_startup;
+    o.start_world_yaw = c.world_space_yaw;
+    o.start_mode = static_cast<int>(cameraunlock::DecodeTrackingMode(c.rotation_enabled, c.position_enabled).value());
+    o.center_window = c.center_window;
+    o.local_smoothing = c.local_smoothing;
+    o.remote_smoothing = c.remote_smoothing;
+    const float limits[5] = {c.limit_x, c.limit_y, c.limit_y_down, c.limit_z, c.limit_z_back};
+    std::copy(std::begin(limits), std::end(limits), o.limits);
+    // view_hook.cpp moves the crosshair on every frame the pose applies, over
+    // ReticleMover's widget list.
+    o.crosshair_follows = true;
+    o.crosshair_widgets = tow_ht::kCrosshairWidgets;
+    o.aim_trace_channel = c.aim_trace_channel;
+    o.aim_trace_distance = c.aim_trace_distance;
+    o.collision_enabled = c.collision_enabled;
+    o.collision_margin = c.collision_margin;
+    o.collision_channel = c.collision_channel;
+    o.collision_release_smoothing = c.collision_release_smoothing;
+    o.widget_dump = c.widget_dump;
+    o.widget_dump_outer = c.widget_dump_outer;
+    o.pose_log = c.pose_log;
+    o.inject_mode = c.inject_mode;
+    // mod_hotkeys.cpp Register: each list through ParseKeyBindings and
+    // RegisterKeyBindings.
+    const std::pair<Action, const std::string*> lists[] = {{kToggle, &c.toggle_key},
+                                                           {kCycleMode, &c.cycle_tracking_mode_key},
+                                                           {kYawMode, &c.yaw_mode_key},
+                                                           {kCycleInject, &c.inject_mode_key}};
+    for (const auto& [action, list] : lists) {
+        const cameraunlock::input::KeyBindingsParseResult parsed = cameraunlock::input::ParseKeyBindings(*list);
+        CHECK_MSG(parsed.ok(), "a migrated key list parses");
+        for (const cameraunlock::input::KeyBinding& b : parsed.bindings) {
+            o.hotkeys.push_back({action, b.vk, static_cast<unsigned>(b.modifiers)});
+        }
+    }
+    std::sort(o.hotkeys.begin(), o.hotkeys.end());
+    return o;
+}
+
+// What the migration must run on for what the import read: the import's
+// reading, less the approved changes. Each change is also a dropped value, in
+// the map's order, which `drops` collects.
+Observed ExpectedMigration(const tow_ht::legacy::Config& read, std::vector<cfg::DroppedValue>& drops) {
+    Observed o = ObserveLegacy(read);
+    if (o.collision_enabled) {
+        drops.push_back({cfg::DropRule::FollowsDefault, "Collision", "Enabled", "true"});
+        o.collision_enabled = false;
+    }
+    if (!o.crosshair_follows) {
+        drops.push_back({cfg::DropRule::Reticle, "Reticle", "Enabled", "false"});
+        o.crosshair_follows = true;
+    }
+    // A widget list at the shipped value is not a drop, so the mod's own list has
+    // to be that value.
+    if (o.crosshair_widgets != tow_ht::legacy::kDefaultReticleTargets) {
+        drops.push_back({cfg::DropRule::Reticle, "Reticle", "Targets", o.crosshair_widgets});
+        o.crosshair_widgets = tow_ht::legacy::kDefaultReticleTargets;
+    }
+    return o;
+}
+
+bool SameDrop(const cfg::DroppedValue& a, const cfg::DroppedValue& b) {
+    return a.rule == b.rule && a.section == b.section && a.key == b.key && a.value == b.value;
+}
+
+// The import's dropped values are exactly `expected` and then the pose shaping
+// set away from what shipped. The pose_shaping entries name one sensitivity or
+// inversion each, in the frozen reader's order, folded exactly when the value is
+// the shipped one; a value that is not folded is dropped as PoseShaping.
+bool DropsAreTheApprovedOnes(const tow_ht::legacy::Config& read, const std::vector<cfg::DroppedValue>& expected,
+                             const cfg::ImportResult& result) {
+    if (result.dropped.size() < expected.size()) return false;
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        if (!SameDrop(result.dropped[i], expected[i])) return false;
+    }
+    const tow_ht::legacy::Config shipped{};
+    struct Expected {
+        const char* section;
+        const char* key;
+        bool folded;
+    };
+    const Expected pose[] = {
+        {"Rotation", "YawSensitivity", Bits(read.yaw_sensitivity) == Bits(shipped.yaw_sensitivity)},
+        {"Rotation", "PitchSensitivity", Bits(read.pitch_sensitivity) == Bits(shipped.pitch_sensitivity)},
+        {"Rotation", "RollSensitivity", Bits(read.roll_sensitivity) == Bits(shipped.roll_sensitivity)},
+        {"Rotation", "InvertYaw", read.invert_yaw == shipped.invert_yaw},
+        {"Rotation", "InvertPitch", read.invert_pitch == shipped.invert_pitch},
+        {"Rotation", "InvertRoll", read.invert_roll == shipped.invert_roll},
+        {"Position", "SensitivityX", Bits(read.position_sensitivity_x) == Bits(shipped.position_sensitivity_x)},
+        {"Position", "SensitivityY", Bits(read.position_sensitivity_y) == Bits(shipped.position_sensitivity_y)},
+        {"Position", "SensitivityZ", Bits(read.position_sensitivity_z) == Bits(shipped.position_sensitivity_z)},
+    };
+    if (result.pose_shaping.size() != std::size(pose)) return false;
+    std::size_t dropped = expected.size();
+    for (std::size_t i = 0; i < std::size(pose); ++i) {
+        const cfg::PoseShapingValue& got = result.pose_shaping[i];
+        if (got.section != pose[i].section || got.key != pose[i].key) return false;
+        if (got.folded != pose[i].folded) return false;
+        if (got.folded) continue;
+        if (dropped >= result.dropped.size()) return false;
+        const cfg::DroppedValue& d = result.dropped[dropped++];
+        if (d.rule != cfg::DropRule::PoseShaping || d.section != got.section || d.key != got.key ||
+            d.value != got.value) {
+            return false;
+        }
+    }
+    return dropped == result.dropped.size();
+}
+
+std::vector<std::string> CanonicalDiagnostics(const std::string& bytes, tow_ht::Config& out) {
+    std::vector<std::string> found;
+    const cfg::CanonicalIni doc = cfg::ParseCanonicalIni(bytes);
+    for (const cfg::CanonicalDiagnostic& d : doc.diagnostics) found.push_back("reader: " + cfg::DescribeCanonicalDiagnostic(d));
+    const cfg::ConfigTable<tow_ht::Config> table = tow_ht::config::Table();
+    out = table.defaults();
+    for (const cfg::CanonicalDiagnostic& d : cfg::ApplyCanonical(doc, table, out).diagnostics) {
+        found.push_back("table: " + cfg::DescribeCanonicalDiagnostic(d));
+    }
+    return found;
+}
+
+// CRLF line ends and no control byte. A byte above 0x7F is allowed: a string row
+// carries the player's bytes as they are, which the corpus's cp1252 case puts in
+// [Dev] WidgetDumpOuter.
+bool Crlf(const std::string& bytes) {
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(bytes[i]);
+        if (c == 0x7F) return false;
+        if (c == '\r' && (i + 1 == bytes.size() || bytes[i + 1] != '\n')) return false;
+        if (c == '\n' && (i == 0 || bytes[i - 1] != '\r')) return false;
+        if (c < 0x20 && c != '\r' && c != '\n') return false;
+    }
+    return !bytes.empty() && bytes.back() == '\n';
+}
+
+// Comparison 2, and what the conversion must do with every input besides.
+void ImportAgainstMigration(const std::vector<Input>& inputs) {
+    const std::string committed = ReadFileBytes(std::string(TOW_SOURCE_DIR) + "/config/HeadTracking.ini");
+    const cfg::ConfigTable<tow_ht::Config> table = tow_ht::config::Table();
+    int compared = 0;
+    for (const Input& input : inputs) {
+        const char* name = input.name.c_str();
+
+        // The import, run as the owner runs it but on a read-only copy: it reads
+        // what the frozen reader reads, records the drops, and writes nothing.
+        cfg::ImportResult imported;
+        tow_ht::legacy::Config read;
+        {
+            Scratch ro;
+            if (input.present) {
+                ro.Write(input.bytes);
+                SetFileAttributesA(ro.ini().c_str(), FILE_ATTRIBUTE_READONLY);
+            }
+            const auto before = ro.Listing();
+            tow_ht::Config unused = table.defaults();
+            imported = tow_ht::legacy::Import().run({ro.wini(), ro.ini(), false}, unused);
+            CHECK_MSG(ro.Listing() == before, "the import leaves a read-only folder as it was");
+            tow_ht::legacy::Load(ro.dir(), read);
+        }
+        CHECK_MSG(imported.status == (input.present ? cfg::ImportStatus::Imported : cfg::ImportStatus::Absent),
+                  "the import reads every input, as the published build did");
+        std::vector<cfg::DroppedValue> approved;
+        const Observed expected = ExpectedMigration(read, approved);
+        const bool drops_ok = DropsAreTheApprovedOnes(read, approved, imported);
+        if (!drops_ok) std::printf("  comparison 2, %s: dropped values\n", name);
+        CHECK_MSG(drops_ok, "comparison 2: the only drops are the approved changes");
+
+        Scratch s;
+        if (input.present) s.Write(input.bytes);
+        cfg::ConfigOwner<tow_ht::Config> owner(tow_ht::config::OwnerOptions(s.wini()));
+        const cfg::ConfigLoadResult<tow_ht::Config> loaded = owner.Load();
+        const cfg::ConfigLoadStatus want =
+            input.present ? cfg::ConfigLoadStatus::Migrated : cfg::ConfigLoadStatus::Created;
+        if (loaded.status != want) {
+            std::printf("  comparison 2, %s: %s, %s\n", name, cfg::ConfigLoadStatusName(loaded.status),
+                        loaded.reason.c_str());
+        }
+        CHECK_MSG(loaded.status == want, "every legacy input converts, and no file is created");
+
+        const std::vector<std::string> diff = Differences(expected, ObserveCanonical(loaded.config));
+        for (const std::string& d : diff) std::printf("  comparison 2, %s: %s\n", name, d.c_str());
+        CHECK_MSG(diff.empty(), "comparison 2: the migration runs as the import read, less the approved changes");
+
+        const std::string migrated = ReadFileBytes(s.ini());
+        tow_ht::Config reread;
+        const std::vector<std::string> diagnostics = CanonicalDiagnostics(migrated, reread);
+        for (const std::string& d : diagnostics) std::printf("  %s: migrated file, %s\n", name, d.c_str());
+        CHECK_MSG(diagnostics.empty(), "the migrated file reads with no diagnostic");
+        CHECK_MSG(Crlf(migrated), "the migrated file has CRLF line ends and no control byte");
+        CHECK_MSG(Differences(ObserveCanonical(reread), ObserveCanonical(loaded.config)).empty(),
+                  "the migrated file reads back as the settings the session runs on");
+        CHECK_MSG(cfg::RenderCanonical(table, reread, tow_ht::config::Header()) == migrated,
+                  "rendering the re-read settings gives the migrated bytes");
+        if (input.present) {
+            CHECK_MSG(ReadFileBytes(s.ini() + ".pre-canonical") == input.bytes,
+                      ".pre-canonical holds the input byte for byte");
+        }
+
+        cfg::ConfigOwner<tow_ht::Config> again(tow_ht::config::OwnerOptions(s.wini()));
+        CHECK_MSG(again.Load().status == cfg::ConfigLoadStatus::Canonical, "the migrated file loads as canonical");
+        CHECK_MSG(ReadFileBytes(s.ini()) == migrated, "loading the migrated file again changes nothing");
+
+        // Fresh equals upgrade: the published build's first-run file, and no file
+        // at all, both end as the committed file.
+        if (input.name == "v0.1.0 first-run file" || input.name == "no file") {
+            CHECK_MSG(migrated == committed, "the first-run file and no file both give the committed file");
+        }
+        ++compared;
+    }
+    std::printf("comparison 2: %d inputs\n", compared);
+}
+
 }  // namespace
 
 int main() {
@@ -543,5 +757,6 @@ int main() {
     FirstRunFileIsThePublishedBuilds();
     const std::vector<Input> inputs = Inputs();
     OracleAgainstImport(inputs);
+    ImportAgainstMigration(inputs);
     return tow_test::Report();
 }

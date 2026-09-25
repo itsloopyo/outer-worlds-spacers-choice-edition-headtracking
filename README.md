@@ -63,7 +63,7 @@ To place the files by hand instead, from the installer ZIP:
    rename it to `xinput1_3.dll`. The game EXE statically imports
    `XINPUT1_3.dll`, so the loader proxies that import and is loaded at startup.
 
-`HeadTracking.ini` is not in the ZIP. The mod writes it next to the `.asi` on
+`HeadTracking.ini` is not in the ZIP. The mod creates it next to the `.asi` on
 first launch, with every setting at its default and commented.
 
 Whether a mod manager will deploy this mod depends on that manager's profile
@@ -144,6 +144,13 @@ Two equivalent binding sets - use whichever your keyboard has:
 | Cycle tracking mode | `Page Up` | `Ctrl+Shift+G` |
 | Toggle yaw mode (world/local) | `Page Down` | `Ctrl+Shift+H` |
 
+Each hotkey is a list of keys in `[Hotkeys]` of `HeadTracking.ini`, so you can
+rebind or remove any of them (see Configuration below).
+
+The tracking mode and the yaw mode you pick are saved to `HeadTracking.ini` and
+come back the next time you start the game. `End` / `Ctrl+Shift+Y` changes the
+current session only: whether tracking is on at startup is `EnableOnStartup`.
+
 There is no recenter key. The mod keeps no center of its own and applies the
 pose it receives exactly as it arrives; centering is done in your tracker, as
 described under Centering above.
@@ -153,8 +160,9 @@ the head pose is injected into. It exists to re-identify the render path after a
 game patch and there is no reason to press it in normal play. The cycle has 18
 positions, so pressing it once does not return by pressing it again, and one of
 the eighteen hands every one of the game's camera calls the head pose, which
-turns the aim decoupling off. Restarting the game returns to the shipped
-setting.
+turns the aim decoupling off. Restarting the game returns to the setting in
+`HeadTracking.ini`, and `InjectModeKey` under `[Dev]` rebinds or removes the
+key.
 
 `Page Up` / `Ctrl+Shift+G` cycles tracking mode:
 
@@ -175,96 +183,113 @@ them.
 
 ## Configuration
 
-`HeadTracking.ini` is written next to the mod on first launch, at
-`<game-root>\Indiana\Binaries\Win64\HeadTracking.ini`. Edit values and restart
-the game to apply them.
+<!-- cameraunlock:config -->
+The mod reads its settings from `Indiana\Binaries\Win64\HeadTracking.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
+
+Earlier versions of the mod used an older layout for this file. The first time this version starts, it converts the file once into the layout below and keeps the file as it was beside it as `HeadTracking.ini.pre-canonical`. `HeadTracking.ini.pre-canonical.last`, when present, is the file as it was before the most recent conversion: the mod converts the file again when it finds the older layout later, for example after an older version of the mod rewrote it.
+
+Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
+
+- Reticle settings, and a key that toggled the reticle.
+- A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
+- The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+
+An older version of the mod may not read the new layout correctly. It reads a key that moved as its own default, and it can misread a hotkey or another value that is now written as a name. To go back to an older version, first copy `HeadTracking.ini.pre-canonical` back over `HeadTracking.ini`, which restores the old file.
+
+With every setting at its default, the file reads:
 
 ```ini
-; Outer Worlds: Spacer's Choice Edition Head Tracking - configuration
-; Edit values, restart the game to apply.
+; The Outer Worlds: Spacer's Choice Edition head tracking settings.
+; Comments start with ; and go on their own line. Text after a value is part of the value.
+; Hotkeys are key names such as End, PageUp or Ctrl+Shift+Y. Separate several with commas; leave empty for none.
+
+[CameraUnlock]
+; Written by the mod. Leave this section in place.
+ConfigFormat=1
 
 [Network]
+; UDP port the mod receives tracker data on (OpenTrack protocol).
 UdpPort=4242
 
 [General]
-EnableOnStartup=1
-; Yaw mode the mod starts in. 1 = horizon-locked: head yaw turns the
-; view about the world up-axis, so the horizon stays level however far
-; the mouse has pitched the camera. 0 = camera-local, which leans the
-; horizon on a pitched turn. Page Down switches it for the session.
-WorldSpaceYaw=1
-; Centre the game window on your monitor's work area at startup. Only
-; ever moves a windowed game - fullscreen and borderless are left alone,
-; and so is a window already centred there. Set to 0 to keep the window
-; wherever the game or you put it.
-CenterWindow=1
+; true: head tracking is on when the game starts. ToggleKey turns it on and off.
+EnableOnStartup=true
+; true: yaw turns around the world's up axis. false: around the camera's own up axis.
+WorldSpaceYaw=true
+; true: turning your head turns the view.
+; Tracking mode at startup, with PositionEnabled. The mode hotkey changes both.
+RotationEnabled=true
+; true: centre the game window on the work area of its monitor at startup. Only a
+; windowed game is moved; fullscreen and borderless are left alone.
+CenterWindow=true
 
-[Hotkeys]
-; Virtual-key code for the yaw-mode toggle. 0x22 is Page Down. It
-; cannot be a key this mod already uses - End (0x23) or Page Up (0x21)
-; - because one press would then fire both actions.
-; Set it to one of those and Page Down is kept, with a line saying so
-; in HeadTracking.log.
-YawModeKey=0x22
-
-[Rotation]
-YawSensitivity=1.0
-PitchSensitivity=1.0
-RollSensitivity=1.0
-InvertYaw=0
-InvertPitch=0
-InvertRoll=0
-; Smoothing is picked per connection from the packet source address and
-; covers rotation and position alike. 0.0 = none, 1.0 = heavy.
-; LocalSmoothing:  tracker runs on this machine (loopback).
-; RemoteSmoothing: tracker is a remote device on the network.
+[Smoothing]
+; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.
 LocalSmoothing=0.0
+; Smoothing when the tracker is another device on the network, such as a phone.
+; 0 is the least, 1 the most.
 RemoteSmoothing=0.15
 
 [Position]
-Enabled=1
-SensitivityX=1.0
-SensitivityY=1.0
-SensitivityZ=1.0
-; Lean limits in meters. Z is asymmetric: more room to lean forward
-; than back, so the view does not end up inside your own character.
-LimitX=0.30
-LimitY=0.20
-LimitZ=0.40
-LimitZBack=0.10
+; true: moving your head moves the view.
+; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
+PositionEnabled=true
+; How far, in metres, leaning left or right can move the view.
+PositionLimitX=0.3
+; How far, in metres, raising your head can move the view.
+PositionLimitY=0.2
+; How far, in metres, lowering your head can move the view.
+PositionLimitYDown=0.2
+; How far, in metres, leaning forward can move the view.
+PositionLimitZ=0.4
+; How far, in metres, leaning back can move the view.
+PositionLimitZBack=0.1
+; true: leaning stops at walls instead of moving the view through them.
+CollisionEnabled=false
+; How far the view is held off a wall when you lean into it, in centimetres.
+CollisionMargin=12.0
+; Which of the game's collision channels the wall check tests against.
+; CollisionChannel=0
+; How gently the view eases back out after a wall stopped a lean.
+; 0 is the quickest, 1 the slowest.
+CollisionReleaseSmoothing=0.9
 
-[Reticle]
-; The game draws its crosshair at the middle of the picture, which stops
-; being where the round goes once the head moves the view. These are the
-; UMG widgets moved to meet the shot. Names come from a running game -
-; set [Dev] WidgetDump=1 and read HeadTracking.log. Name or Name@Outer,
-; comma separated, where Outer is text found in the widget's chain of
-; parent objects joined with / (for example Reticle/WidgetTree).
-Enabled=1
-Targets=Crosshair@Reticle/WidgetTree/HUD_BP_C/IndianaGameInstance,ReticuleInteract@Reticle/WidgetTree/HUD_BP_C/IndianaGameInstance,CauseDamageWidget@Reticle/WidgetTree/HUD_BP_C/IndianaGameInstance,StealthOverlay@Reticle/WidgetTree/HUD_BP_C/IndianaGameInstance,TTDOverlay@Reticle/WidgetTree/HUD_BP_C/IndianaGameInstance,TTDDTOverlay@Reticle/WidgetTree/HUD_BP_C/IndianaGameInstance
+[Hotkeys]
+; Turns head tracking on and off.
+ToggleKey=End, Ctrl+Shift+Y
+; Changes the tracking mode: rotation and position, rotation only, position only.
+CycleTrackingModeKey=PageUp, Ctrl+Shift+G
+; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
+YawModeKey=PageDown, Ctrl+Shift+H
 
 [Aim]
-; The cast that gives the crosshair the live distance to what you are
-; pointing at. Without it the mark is right at one range only.
-; MaxDistance is in centimeters; past it the crosshair marks the aim
+; Which of the game's collision channels the aim cast tests against, 0 to 255. The cast
+; finds how far away the point you aim at is, so the crosshair sits where the shot lands.
+; AimTraceChannel=0
+; How far the aim cast reaches, in centimetres. Past it the crosshair marks the aim
 ; direction instead of a point.
-TraceChannel=0
-MaxDistance=20000
-
-[Collision]
-; Stops a lean putting the view inside a wall. Off until the sweep has
-; been confirmed engaging on real geometry in this game - the log says
-; so on every contact. Radius is how far off a surface the eye is held,
-; in centimeters. ReleaseSmoothing is how quickly the lean reopens once
-; an obstruction clears; tightening is always instant.
-Enabled=0
-Radius=12.0
-Channel=0
-ReleaseSmoothing=0.9
+MaxDistance=20000.0
 
 [Dev]
-WidgetDump=0
+; true: write every widget whose name looks like a crosshair to HeadTracking.log, with
+; the objects it sits under. For finding the crosshair after a game patch.
+WidgetDump=false
+; With WidgetDump on, also list every widget nested under an object whose name holds
+; this text.
+WidgetDumpOuter=
+; true: keep writing the head pose to HeadTracking.log every two seconds, instead of
+; stopping after the first twenty lines. For measuring.
+PoseLog=false
+; Which of the game's view point callers is given the head pose, in place of the one
+; this build picks. -1 keeps the build's choice. The others are for finding the render
+; path after a game patch, and 0 hands every caller the head pose, which turns aim
+; decoupling off.
+InjectMode=-1
+; Steps through the inject modes in game, for the same job. The next start goes back
+; to InjectMode.
+InjectModeKey=Ctrl+Shift+J
 ```
+<!-- /cameraunlock:config -->
 
 Field of view is the game's own setting, under Settings > Graphics > Display.
 Set it wherever you like: your head moves the view by the same amount at any
@@ -305,14 +330,15 @@ field of view, and the slider takes effect as you drag it, with no restart.
   before the packet leaves it. Route it through OpenTrack so its filters and
   curves can clean the feed up, as described under Phone App Setup.
 - Raise `RemoteSmoothing` for a tracker on the network, or `LocalSmoothing` for
-  one on this machine. Both live in the `[Rotation]` section.
+  one on this machine. Both live in the `[Smoothing]` section.
 
 **Leaning hard into a wall puts the view through it**
 
 - The lean collision sweep is what stops that, and it ships turned off. Set
-  `Enabled=1` in `[Collision]`. `Radius` is how far off a surface the eye is
-  held, in centimeters; `Channel` is which collision channel the sweep tests
-  against; `ReleaseSmoothing` is how quickly the lean reopens once an
+  `CollisionEnabled=true` in `[Position]`. `CollisionMargin` is how far off a
+  surface the eye is held, in centimeters; `CollisionChannel` is which
+  collision channel the sweep tests against (delete the `; ` in front of it to
+  set it); `CollisionReleaseSmoothing` is how quickly the lean reopens once an
   obstruction clears.
 - `HeadTracking.log` says what the sweep is doing: `lean-clamp: contact=yes`
   when it is holding the eye off geometry, `contact=no` when the room is open,
@@ -339,7 +365,7 @@ field of view, and the slider takes effect as you drag it, with no restart.
   opened on - the screen minus the taskbar. A
   fullscreen or borderless window is left alone, and so is one already centered
   on that work area. A window the game centered on the whole monitor sits half a
-  taskbar low, so it does get nudged up. Set `CenterWindow=0` in
+  taskbar low, so it does get nudged up. Set `CenterWindow=false` in
   `HeadTracking.ini` to leave your window where it is.
 
 ## Updating
@@ -348,10 +374,13 @@ Download the new release and run `install.cmd` again. Your config is preserved.
 
 ## Uninstalling
 
-Run `uninstall.cmd`. This removes the mod DLLs, and also `HeadTracking.ini` and
-the two log files, so any settings you tuned are gone with it. The ASI loader is
-only removed if the installer put it there. Use `uninstall.cmd /force` to remove
-it anyway and leave the game folder fully vanilla.
+Run `uninstall.cmd`. This removes the mod DLLs and the two log files, and leaves
+`HeadTracking.ini` in place, with any copies the mod kept of it, so your
+settings are still there if you install again. The ASI loader is only removed if
+the installer put it there; `uninstall.cmd /force` removes it anyway. To leave
+the game folder fully vanilla, also delete `HeadTracking.ini` by hand, and
+`HeadTracking.ini.pre-canonical` and `HeadTracking.ini.pre-canonical.last` where
+they are there.
 
 ## Building from Source
 
@@ -368,9 +397,9 @@ Outputs land in `release/`.
 
 ## Community & Support
 
-- [Discord](https://discord.com/invite/dxyZdyFNT9) - setup help, bug reports, and new-release announcements
-- [Lopari](https://lopari.app) - free Windows launcher with one-click install and launch of head-tracking mods
-- [Headcam](https://headcam.app) - free app that turns your phone into a head tracker
+- Discord: [Loop's Head Tracking Hangout](https://discord.com/invite/dxyZdyFNT9) - setup help, bug reports, and new-release announcements
+- [Lopari](https://lopari.app) - free Windows launcher with one-click install and launch for the released head-tracking mods
+- [Headcam](https://headcam.app) - free app that turns your iPhone or Android phone into the head tracker
 
 ## License
 

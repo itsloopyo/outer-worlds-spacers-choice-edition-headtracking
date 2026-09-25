@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 itsloopyo
 
-// What HeadTracking.ini turns into.
+// What the frozen pre-canonical reader makes of a HeadTracking.ini.
 //
-// config_sanitize_tests covers the value guards on their own. This covers the
-// wiring above them: that every key in the file reaches the field it names,
-// that a key the file leaves out keeps its compiled default, and that the ini
-// the mod writes for a fresh install reads back as the defaults it documents.
-//
-// The reason it is worth a suite of its own is that the reads are a flat list
-// grouped only by section, so a key can be dropped or pointed at the wrong
-// field without anything failing to compile - and the symptom in game is a
-// setting that silently does nothing.
+// The legacy import converts an older file through this reader, so these lock
+// the reading an old file gets: that every key reaches the field it names, that
+// a key the file leaves out keeps its compiled default, and how a bad value is
+// handled. config_sanitize_tests covers the value guards on their own, and
+// tests/config_differential/ holds the reader to the published build over the
+// whole mutation corpus.
 //
 // Runs against a temporary directory, so it needs no game and no install.
 
-#include "config.h"
+#include "legacy_config/legacy_config.h"
 #include "test_harness.h"
 
 #include <cstdio>
@@ -25,7 +22,7 @@
 
 namespace {
 
-namespace ht = tow_ht;
+namespace ht = tow_ht::legacy;
 
 // A directory of our own under %TEMP%, so a run cannot read or write a real
 // install's ini. Created on first use and idempotent after that.
@@ -72,7 +69,7 @@ void TestEverySectionReachesItsFields() {
         "[Diag]\nInjectMode=0\n");
 
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
 
     CHECK(c.udp_port == 5150);
     CHECK(!c.enable_on_startup);
@@ -125,7 +122,7 @@ void TestAbsentKeysKeepTheCompiledDefaults() {
 
     const ht::Config fresh;
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
 
     CHECK(c.udp_port == fresh.udp_port);
     CHECK(c.enable_on_startup == fresh.enable_on_startup);
@@ -169,7 +166,7 @@ void TestOutOfRangeValuesAreClampedOrFallBackPerKey() {
 
     const ht::Config fresh;
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
 
     // Integers: back to the default.
     CHECK_MSG(c.udp_port == fresh.udp_port, "a port too wide for a uint16 is not clamped");
@@ -200,7 +197,7 @@ void TestNonFiniteValuesFallBack() {
 
     const ht::Config fresh;
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
 
     CHECK_NEAR(c.yaw_sensitivity, fresh.yaw_sensitivity, 1e-6);
     CHECK_NEAR_MSG(c.roll_sensitivity, fresh.roll_sensitivity, 1e-6,
@@ -220,7 +217,7 @@ void TestTrailingCommentsDoNotChangeAValue() {
         "[General]\nEnableOnStartup=1 ; on\n");
 
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
 
     CHECK(c.udp_port == 5151);
     CHECK(c.enable_on_startup);
@@ -242,7 +239,7 @@ void TestYawModeKeyCannotTakeAKeyTheModAlreadyBinds() {
         WriteIni(dir, body);
 
         ht::Config c;
-        ht::config_load(dir, c);
+        ht::Load(dir, c);
         CHECK_MSG(c.yaw_mode_key == fresh.yaw_mode_key,
                   "a YawModeKey already owned by another binding keeps Page Down");
     }
@@ -251,49 +248,9 @@ void TestYawModeKeyCannotTakeAKeyTheModAlreadyBinds() {
     // the two the fleet leaves deliberately free.
     WriteIni(dir, "[Hotkeys]\nYawModeKey=0x24\n");
     ht::Config home;
-    ht::config_load(dir, home);
+    ht::Load(dir, home);
     CHECK_MSG(home.yaw_mode_key == 0x24,
               "an unclaimed virtual-key code is accepted unchanged");
-
-    RemoveIni(dir);
-}
-
-// The ini a fresh install gets has to read back as the defaults it documents,
-// or the file and the compiled defaults disagree from the first launch.
-void TestTheWrittenDefaultIniRoundTrips() {
-    const std::string dir = ScratchDir();
-    RemoveIni(dir);
-    ht::config_write_default_if_missing(dir);
-
-    const ht::Config fresh;
-    ht::Config c;
-    ht::config_load(dir, c);
-
-    CHECK(c.udp_port == fresh.udp_port);
-    CHECK(c.enable_on_startup == fresh.enable_on_startup);
-    CHECK(c.world_space_yaw == fresh.world_space_yaw);
-    CHECK(c.center_window == fresh.center_window);
-    CHECK(c.yaw_mode_key == fresh.yaw_mode_key);
-    CHECK_NEAR(c.yaw_sensitivity, fresh.yaw_sensitivity, 1e-6);
-    CHECK_NEAR(c.pitch_sensitivity, fresh.pitch_sensitivity, 1e-6);
-    CHECK_NEAR(c.roll_sensitivity, fresh.roll_sensitivity, 1e-6);
-    CHECK(!c.invert_yaw && !c.invert_pitch && !c.invert_roll);
-    CHECK_NEAR(c.local_smoothing, fresh.local_smoothing, 1e-6);
-    CHECK_NEAR(c.remote_smoothing, fresh.remote_smoothing, 1e-6);
-    CHECK(c.position_enabled == fresh.position_enabled);
-    CHECK_NEAR(c.limit_x, fresh.limit_x, 1e-6);
-    CHECK_NEAR(c.limit_y, fresh.limit_y, 1e-6);
-    CHECK_NEAR(c.limit_z, fresh.limit_z, 1e-6);
-    CHECK_NEAR(c.limit_z_back, fresh.limit_z_back, 1e-6);
-    CHECK(c.reticle_enabled == fresh.reticle_enabled);
-    CHECK_MSG(!c.reticle_targets.empty(), "the shipped ini names the crosshair widgets");
-    CHECK(c.aim_trace_channel == fresh.aim_trace_channel);
-    CHECK_NEAR(c.aim_trace_distance, fresh.aim_trace_distance, 1e-3);
-    CHECK_MSG(!c.collision_enabled, "the lean sweep ships off until it is confirmed");
-    CHECK_NEAR(c.collision_radius, fresh.collision_radius, 1e-6);
-    CHECK(c.collision_channel == fresh.collision_channel);
-    CHECK_NEAR(c.collision_release_smoothing, fresh.collision_release_smoothing, 1e-6);
-    CHECK(!c.widget_dump);
 
     RemoveIni(dir);
 }
@@ -321,7 +278,7 @@ void TestPartiallyParsedFloatsFallBack() {
 
     const ht::Config fresh;
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
 
     CHECK_NEAR_MSG(c.remote_smoothing, fresh.remote_smoothing, 1e-6,
                    "a decimal comma is not a number, so the default stands rather "
@@ -350,32 +307,12 @@ void TestHexSpelledIntegerKeysDoNotReadAsZero() {
 
     const ht::Config fresh;
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
 
     CHECK_MSG(c.inject_mode == fresh.inject_mode,
               "a hex-spelled InjectMode is rejected, not read as the all-callers mode");
     CHECK_NEAR_MSG(c.collision_radius, fresh.collision_radius, 1e-6,
                    "a hex-spelled Radius is rejected, not read as 18.0cm");
-
-    RemoveIni(dir);
-}
-
-// Writing the shipped ini must never touch one that is already there. The guard
-// is the _if_missing half of the name, and nothing exercised it: a refactor that
-// dropped or inverted the exists test would overwrite every player's tuned file
-// on their next launch with the suite still green.
-void TestWritingTheDefaultIniLeavesAnExistingOneAlone() {
-    const std::string dir = ScratchDir();
-    WriteIni(dir, "[Network]\nUdpPort=5150\n[Reticle]\nEnabled=0\n");
-
-    ht::config_write_default_if_missing(dir);
-
-    ht::Config c;
-    ht::config_load(dir, c);
-    CHECK_MSG(c.udp_port == 5150,
-              "a configured port survives the default-ini write");
-    CHECK_MSG(!c.reticle_enabled,
-              "so does a setting the player turned off");
 
     RemoveIni(dir);
 }
@@ -386,7 +323,7 @@ void TestRetiredAdsModeKeyIsIgnored() {
     const std::string dir = ScratchDir();
     WriteIni(dir, "[Aim]\nAdsMode=marker\nTraceChannel=3\nMaxDistance=12345\n");
     ht::Config c;
-    ht::config_load(dir, c);
+    ht::Load(dir, c);
     CHECK(c.aim_trace_channel == 3);
     CHECK_NEAR(c.aim_trace_distance, 12345.0, 1e-3);
     RemoveIni(dir);
@@ -402,10 +339,8 @@ int main() {
     TestNonFiniteValuesFallBack();
     TestPartiallyParsedFloatsFallBack();
     TestHexSpelledIntegerKeysDoNotReadAsZero();
-    TestWritingTheDefaultIniLeavesAnExistingOneAlone();
     TestTrailingCommentsDoNotChangeAValue();
     TestYawModeKeyCannotTakeAKeyTheModAlreadyBinds();
-    TestTheWrittenDefaultIniRoundTrips();
     RemoveDirectoryA(ScratchDir().c_str());
     return tow_test::Report();
 }
