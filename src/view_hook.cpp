@@ -74,8 +74,8 @@ cameraunlock::camera::LeanClamp g_leanClamp;
 // on the OPPOSITE side past it, so a 93 degree pose reads as -87 and the view
 // snaps to the other shoulder - at zoom factor 1.0, where the function is
 // supposed to be the identity. Nothing upstream bounds rotation: the processor
-// clamps position only, there is no rotation equivalent, and YawSensitivity
-// reaches 3.0, so 31 degrees of real head turn is enough to cross it.
+// clamps position only and has no rotation equivalent, so the pose crosses it
+// whenever the tracker reports a yaw or pitch of 90 degrees or more.
 //
 // Past the limit the angle goes through unscaled: the compensation is worth less
 // than the discontinuity, and at 89.9 the step between the scaled and unscaled
