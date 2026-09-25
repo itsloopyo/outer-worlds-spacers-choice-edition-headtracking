@@ -6,7 +6,9 @@
 // Three readings of every input, and what may differ between them:
 //
 //   Oracle     the reader of the newest published build (v0.1.0, 1014f66, core
-//              c480d8a), compiled from its own sources (oracle_api.h)
+//              c480d8a), compiled from its own sources (oracle_api.h), and the
+//              startup state and bindings it made of the reading, read from
+//              that build's source text
 //   Import     the frozen reader in src/legacy_config/
 //   Migration  the config owner converting the file through the frozen import,
 //              then the canonical reader and table on what it wrote
@@ -35,6 +37,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -63,8 +66,8 @@ namespace testing = cameraunlock::config::testing;
 
 // ---- Provenance ------------------------------------------------------------
 //
-// Every source the oracle and the import compile, pinned by the SHA-256 of its
-// bytes. The oracle's files are the published build's, taken with
+// Every source the oracle and the import compile or read, pinned by the SHA-256
+// of its bytes. The oracle's files are the published build's, taken with
 // `git show v0.1.0:src/<file>` and `git -C cameraunlock-core show c480d8a:<path>`.
 // The core files both readers compile are hash-equal to c480d8a's, and so are
 // src/logging.h, src/inject_mode.h and src/legacy_config/config_sanitize.h,
@@ -90,6 +93,9 @@ constexpr Pinned kPinned[] = {
     {"tests/config_differential/oracle/core/cameraunlock/ads/ads_fade.h", "00b80e59d261546dd50138759676f5a1b0d07681fa79a9b89be69797dc35c37f"},
     {"tests/config_differential/oracle/core/cameraunlock/ads/ads_mode.h", "94cd36b585e878e673566f602e9496417cb797970162fcc9c2af1e50e24358de"},
     {"tests/config_differential/oracle/core/cameraunlock/ads/entry_pose.h", "0c26c26fd3f6ba8307b731af391340e9286504ef157329c04883495f211cc870"},
+    // The oracle's startup and bindings, read as text: v0.1.0:src/...
+    {"tests/config_differential/oracle/uncompiled/headtracking_mod.cpp", "5fbe8bfbfe21af0154e574a6aed9c3d59ac369859fc71ed9b8c28caecae5ceb4"},
+    {"tests/config_differential/oracle/uncompiled/mod_hotkeys.cpp", "d9073b126445ad74b1c5496367d6af5fde0d887ee1d0d0c509ad5ef2bf0f289b"},
     // Both readers: core at the pin, hash-equal to c480d8a:cpp/...
     {"cameraunlock-core/cpp/include/cameraunlock/config/ini_reader.h", "a7ffb44210ff59672fa97e8e5feaa2cb3e81938fcc0334a384c68bc371b3857a"},
     {"cameraunlock-core/cpp/src/config/ini_reader.cpp", "e01515c2656aaf533bae4350dc45b702c3e3d4043935743dcc9bd5ea581fbe1c"},
@@ -305,25 +311,174 @@ bool SamePoseShaping(const PoseShaping& a, const PoseShaping& b) {
     return true;
 }
 
-// Hand copied, not compiled from the published sources: the oracle library
-// exports only the reader. v0.1.0:src/headtracking_mod.cpp:70-72
-// (ApplyConfigToSession), which the frozen commit matches: [Position] Enabled
-// picks the startup mode and nothing else.
+// ---- The published build's startup and bindings ------------------------------
+//
+// The oracle library compiles only v0.1.0's reader: its ApplyConfigToSession and
+// its hotkey Register pull in the session, the view hook and the poller. The
+// oracle reads what those two do from their source instead, the pinned copies
+// in oracle/uncompiled/, and throws on any statement it does not recognise, so
+// an unread line cannot pass as agreement.
+
+std::string CollapseWhitespace(const std::string& s) {
+    std::string out;
+    bool space = false;
+    for (const char c : s) {
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            space = !out.empty();
+            continue;
+        }
+        if (space) out += ' ';
+        space = false;
+        out += c;
+    }
+    return out;
+}
+
+// The definition that starts with `signature` in oracle/uncompiled/<file>, up to
+// its closing brace in column 0, line comments removed and whitespace collapsed
+// to single spaces.
+std::string PublishedBody(const char* file, const char* signature) {
+    const std::string src =
+        ReadFileBytes(std::string(TOW_SOURCE_DIR) + "/tests/config_differential/oracle/uncompiled/" + file);
+    const std::size_t start = src.find(signature);
+    if (start == std::string::npos || src.find(signature, start + 1) != std::string::npos) {
+        throw std::runtime_error(std::string(file) + " does not define " + signature + " exactly once");
+    }
+    const std::size_t end = src.find("\n}\n", start);
+    if (end == std::string::npos) throw std::runtime_error(std::string(file) + ": " + signature + " has no end");
+    const std::string body = src.substr(start, end + 2 - start);
+    std::string code;
+    for (std::size_t i = 0; i < body.size();) {
+        if (body.compare(i, 2, "//") == 0) {
+            i = body.find('\n', i);
+            if (i == std::string::npos) break;
+            continue;
+        }
+        code += body[i++];
+    }
+    return CollapseWhitespace(code);
+}
+
+std::size_t Occurrences(const std::string& s, const std::string& what) {
+    std::size_t n = 0;
+    for (std::size_t at = s.find(what); at != std::string::npos; at = s.find(what, at + 1)) ++n;
+    return n;
+}
+
+int TrackingModeNamed(const std::string& name) {
+    if (name == "RotationAndPosition") return static_cast<int>(TrackingMode::RotationAndPosition);
+    if (name == "RotationOnly") return static_cast<int>(TrackingMode::RotationOnly);
+    if (name == "PositionOnly") return static_cast<int>(TrackingMode::PositionOnly);
+    throw std::runtime_error("unknown tracking mode " + name);
+}
+
+// What v0.1.0 does with the reader's output at startup: the session mode for
+// each value of [Position] Enabled, and the reader field each of the position
+// processor's five limits takes.
+struct PublishedStartup {
+    int mode_if_position = 0;
+    int mode_if_no_position = 0;
+    // X, Y up, Y down, Z forward, Z back, as the position processor holds them.
+    std::string limit_fields[5];
+};
+
+const PublishedStartup& Startup() {
+    static const PublishedStartup s_startup = [] {
+        const std::string body = PublishedBody("headtracking_mod.cpp", "void ApplyConfigToSession() {");
+        PublishedStartup p;
+
+        const std::regex set_mode(
+            R"(g_session->SetMode\(g_config\.position_enabled \? TrackingMode::(\w+) : TrackingMode::(\w+)\);)");
+        std::smatch m;
+        if (Occurrences(body, "SetMode(") != 1 || !std::regex_search(body, m, set_mode)) {
+            throw std::runtime_error("v0.1.0 ApplyConfigToSession: the SetMode call is not the one this test reads");
+        }
+        p.mode_if_position = TrackingModeNamed(m[1].str());
+        p.mode_if_no_position = TrackingModeNamed(m[2].str());
+
+        static const char* const kProcessor[5] = {"limit_x", "limit_y", "limit_y_down", "limit_z", "limit_z_back"};
+        const std::regex limit(R"(ps\.(limit_\w+) = g_config\.(\w+);)");
+        std::size_t read = 0;
+        for (std::sregex_iterator it(body.begin(), body.end(), limit), done; it != done; ++it, ++read) {
+            const std::string target = (*it)[1].str();
+            const auto slot = std::find_if(std::begin(kProcessor), std::end(kProcessor),
+                                           [&](const char* name) { return target == name; });
+            if (slot == std::end(kProcessor)) throw std::runtime_error("v0.1.0 sets unknown ps." + target);
+            std::string& field = p.limit_fields[slot - std::begin(kProcessor)];
+            if (!field.empty()) throw std::runtime_error("v0.1.0 sets ps." + target + " twice");
+            field = (*it)[2].str();
+        }
+        if (read != std::size(kProcessor) || Occurrences(body, "ps.limit_") != read) {
+            throw std::runtime_error("v0.1.0 ApplyConfigToSession: the limits are not the five assignments this test reads");
+        }
+        return p;
+    }();
+    return s_startup;
+}
+
+float PublishedLimitField(const tow_oracle::PublishedConfig& c, const std::string& field) {
+    if (field == "limit_x") return c.limit_x;
+    if (field == "limit_y") return c.limit_y;
+    if (field == "limit_z") return c.limit_z;
+    if (field == "limit_z_back") return c.limit_z_back;
+    throw std::runtime_error("v0.1.0 sets a limit from g_config." + field + ", which this test does not read");
+}
+
+// v0.1.0's Register, binding by binding: the action, the key (-1 for
+// config.yaw_mode_key) and its modifiers. NavGuarded is kPlain and ChordGuarded
+// kCtrlShift because that is how key_binding_registration.h fires a binding
+// with no modifiers and one naming Ctrl+Shift.
+const std::vector<Hotkey>& PublishedBindings() {
+    static const std::vector<Hotkey> s_bindings = [] {
+        const std::string body =
+            PublishedBody("mod_hotkeys.cpp", "bool Register(Session& session, const Config& config) {");
+        const std::regex add(
+            R"(g_poller->AddHotkey\((0x[0-9A-Fa-f]+|config\.yaw_mode_key)(?: /\*[^*]*\*/)?, (NavGuarded|ChordGuarded)\(\[\] \{ (\w+)\(\); \}\)\);)");
+        std::vector<Hotkey> bindings;
+        for (std::sregex_iterator it(body.begin(), body.end(), add), done; it != done; ++it) {
+            const std::string key = (*it)[1].str();
+            const int vk = key == "config.yaw_mode_key" ? -1 : std::stoi(key, nullptr, 16);
+            const unsigned modifiers = (*it)[2].str() == "NavGuarded" ? kPlain : kCtrlShift;
+            const std::string handler = (*it)[3].str();
+            int action;
+            if (handler == "ToggleTracking") action = kToggle;
+            else if (handler == "CycleTrackingMode") action = kCycleMode;
+            else if (handler == "ToggleYawMode") action = kYawMode;
+            else if (handler == "CycleAdsMode") action = kAdsMode;
+            else if (handler == "CycleInject") action = kCycleInject;
+            else throw std::runtime_error("v0.1.0 binds unknown handler " + handler);
+            bindings.push_back({action, vk, modifiers});
+        }
+        if (bindings.empty() || Occurrences(body, "AddHotkey(") != bindings.size()) {
+            throw std::runtime_error("v0.1.0 Register: a binding is not in the shape this test reads");
+        }
+        return bindings;
+    }();
+    return s_bindings;
+}
+
+// ---- The frozen commit's startup and bindings ---------------------------------
+//
+// Hand copied from the frozen commit (20e7260), whose ApplyConfigToSession and
+// Register the import's reading runs on. Comparison 1 holds each to the
+// published build's, read above, so a mistake here fails it.
+
+// src/headtracking_mod.cpp ApplyConfigToSession: [Position] Enabled picks the
+// startup mode and nothing else.
 int LegacyStartMode(bool position_enabled) {
     return static_cast<int>(position_enabled ? TrackingMode::RotationAndPosition : TrackingMode::RotationOnly);
 }
 
-// v0.1.0:src/headtracking_mod.cpp:55-63 (ApplyConfigToSession): the one vertical
-// limit is mirrored into the downward bound.
+// src/headtracking_mod.cpp ApplyConfigToSession: the one vertical limit is
+// mirrored into the downward bound.
 void LegacyLimits(float x, float y, float z, float z_back, float (&out)[5]) {
     const float limits[5] = {x, y, y, z, z_back};
     std::copy(std::begin(limits), std::end(limits), out);
 }
 
-// Hand copied from the frozen commit's src/mod_hotkeys.cpp (Register), which is
-// v0.1.0:src/mod_hotkeys.cpp:79-100 less its ADS lines: End, Page Up and the
-// configured yaw key NavGuarded, the Y/G/H chords and the J inject chord
-// ChordGuarded.
+// src/mod_hotkeys.cpp Register, which is v0.1.0's less its ADS lines: End, Page
+// Up and the configured yaw key NavGuarded, the Y/G/H chords and the J inject
+// chord ChordGuarded.
 std::vector<Hotkey> LegacyHotkeys(int yaw_mode_key) {
     std::vector<Hotkey> keys = {
         {kToggle, 0x23, kPlain},     {kCycleMode, 0x21, kPlain},     {kYawMode, yaw_mode_key, kPlain},
@@ -348,11 +503,12 @@ OracleReading ReadOracle(const std::string& dir) {
     // v0.1.0:src/view_hook.cpp:523-524 (Install).
     o.start_enabled = c.enable_on_startup;
     o.start_world_yaw = c.world_space_yaw;
-    o.start_mode = LegacyStartMode(c.position_enabled);
+    const PublishedStartup& startup = Startup();
+    o.start_mode = c.position_enabled ? startup.mode_if_position : startup.mode_if_no_position;
     o.center_window = c.center_window;
     o.local_smoothing = c.local_smoothing;
     o.remote_smoothing = c.remote_smoothing;
-    LegacyLimits(c.limit_x, c.limit_y, c.limit_z, c.limit_z_back, o.limits);
+    for (int i = 0; i < 5; ++i) o.limits[i] = PublishedLimitField(c, startup.limit_fields[i]);
     o.crosshair_follows = c.reticle_enabled;
     o.crosshair_widgets = c.reticle_targets;
     o.aim_trace_channel = c.aim_trace_channel;
@@ -365,11 +521,10 @@ OracleReading ReadOracle(const std::string& dir) {
     o.widget_dump_outer = c.widget_dump_outer;
     o.pose_log = c.pose_log;
     o.inject_mode = c.inject_mode;
-    // v0.1.0:src/mod_hotkeys.cpp:79-100 (Register): the set above, plus the ADS
-    // cycle on Insert (line 84) and Ctrl+Shift+U (line 90).
-    o.hotkeys = LegacyHotkeys(c.yaw_mode_key);
-    o.hotkeys.push_back({kAdsMode, 0x2D, kPlain});
-    o.hotkeys.push_back({kAdsMode, 0x55, kCtrlShift});
+    for (Hotkey h : PublishedBindings()) {
+        if (std::get<1>(h) == -1) std::get<1>(h) = c.yaw_mode_key;
+        o.hotkeys.push_back(h);
+    }
     std::sort(o.hotkeys.begin(), o.hotkeys.end());
     r.pose = {{c.yaw_sensitivity, c.pitch_sensitivity, c.roll_sensitivity},
               {c.invert_yaw, c.invert_pitch, c.invert_roll},

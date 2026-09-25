@@ -11,7 +11,9 @@
 // include from src/, and oracle/core/ the core headers they include that core
 // has changed or removed since, all byte for byte as the tag has them
 // (provenance in differential_tests.cpp). oracle_api.cpp compiles them with
-// their namespaces renamed, so they link beside today's code.
+// their namespaces renamed, so they link beside today's code. oracle/uncompiled/
+// holds the tag's headtracking_mod.cpp and mod_hotkeys.cpp, which nothing
+// compiles: the test reads them as text.
 namespace tow_oracle {
 
 // tow_ht::Config as that build declared it, field for field.
