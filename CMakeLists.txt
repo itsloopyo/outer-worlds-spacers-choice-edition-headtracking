@@ -51,6 +51,7 @@ set(MOD_SOURCES
     src/dllmain.cpp
     src/headtracking_mod.cpp
     src/config.cpp
+    src/legacy_config/legacy_config.cpp
     src/mod_hotkeys.cpp
     src/ads_pose.cpp
     src/ads_state.cpp
@@ -161,6 +162,7 @@ if(TOW_BUILD_TESTS)
     add_executable(tow_config_load_tests
         tests/config_load_tests.cpp
         src/config.cpp
+        src/legacy_config/legacy_config.cpp
     )
     target_include_directories(tow_config_load_tests PRIVATE
         src
@@ -169,6 +171,42 @@ if(TOW_BUILD_TESTS)
     )
     target_link_libraries(tow_config_load_tests PRIVATE cameraunlock)
     add_test(NAME tow_config_load_tests COMMAND tow_config_load_tests)
+
+    # The differential test for the config conversion. The oracle is the reader
+    # of the newest published build, compiled from its own sources with the mod's
+    # and core's namespaces renamed, so it links beside today's code and nothing
+    # in it can resolve to a symbol of the mod under test. Its include roots put
+    # the published build's files ahead of core's current headers.
+    add_library(tow_config_oracle STATIC
+        tests/config_differential/oracle_api.cpp
+        tests/config_differential/oracle/src/config.cpp
+        cameraunlock-core/cpp/src/config/ini_reader.cpp
+        cameraunlock-core/cpp/src/logging/file_log.cpp
+    )
+    target_include_directories(tow_config_oracle PRIVATE
+        tests/config_differential/oracle/src
+        tests/config_differential/oracle/core
+        cameraunlock-core/cpp/include
+    )
+    target_compile_definitions(tow_config_oracle PRIVATE
+        tow_ht=tow_ht_oracle
+        cameraunlock=tow_oracle_core
+    )
+
+    add_executable(tow_config_differential_tests
+        tests/config_differential/differential_tests.cpp
+        src/legacy_config/legacy_config.cpp
+    )
+    target_include_directories(tow_config_differential_tests PRIVATE
+        src
+        tests
+        tests/config_differential
+        cameraunlock-core/cpp/include
+    )
+    target_link_libraries(tow_config_differential_tests PRIVATE tow_config_oracle cameraunlock bcrypt)
+    target_compile_definitions(tow_config_differential_tests PRIVATE
+        TOW_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    add_test(NAME tow_config_differential_tests COMMAND tow_config_differential_tests)
 
     # The width check both Kismet traces run before writing a parameter frame
     # into a stack buffer at offsets read out of the engine's reflection data.

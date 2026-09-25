@@ -4,3 +4,4 @@
 *.ps1 text eol=crlf
 *.dll binary
 *.zip binary
+tests/config_differential/data/** -text

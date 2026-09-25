@@ -17,7 +17,7 @@
 // value outside its range lands somewhere deliberate, and that a valid value -
 // including a deliberate 0.0 - is returned exactly as written.
 
-#include "config_sanitize.h"
+#include "legacy_config/config_sanitize.h"
 #include "test_harness.h"
 
 #include <limits>
