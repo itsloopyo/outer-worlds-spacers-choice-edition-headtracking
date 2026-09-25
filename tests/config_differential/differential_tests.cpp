@@ -27,6 +27,9 @@
 // Inputs: the published build's first-run file (it shipped no config and seeded
 // none, so every player's file started as that one), no file, an empty file,
 // and core's corpus of mutations of the first-run file.
+//
+// The distinct migrated files are written beside the executable under
+// migrated\, for lint-migrated.mjs to run core's canonical config lint over.
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -38,6 +41,7 @@
 #include <fstream>
 #include <iterator>
 #include <regex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -814,9 +818,9 @@ std::vector<std::string> CanonicalDiagnostics(const std::string& bytes, tow_ht::
     return found;
 }
 
-// CRLF line ends and no control byte. A byte above 0x7F is allowed: a string row
-// carries the player's bytes as they are, which the corpus's cp1252 case puts in
-// [Dev] WidgetDumpOuter.
+// CRLF line ends and no control byte. A byte above 0x7F is allowed here: a string
+// row carries the player's bytes as they are, which the corpus's cp1252 case puts
+// in [Dev] WidgetDumpOuter. lint-migrated.mjs holds that allowance to that row.
 bool Crlf(const std::string& bytes) {
     for (std::size_t i = 0; i < bytes.size(); ++i) {
         const unsigned char c = static_cast<unsigned char>(bytes[i]);
@@ -829,7 +833,7 @@ bool Crlf(const std::string& bytes) {
 }
 
 // Comparison 2, and what the conversion must do with every input besides.
-void ImportAgainstMigration(const std::vector<Input>& inputs) {
+void ImportAgainstMigration(const std::vector<Input>& inputs, std::set<std::string>& distinct) {
     const std::string committed = ReadFileBytes(std::string(TOW_SOURCE_DIR) + "/config/HeadTracking.ini");
     const cfg::ConfigTable<tow_ht::Config> table = tow_ht::config::Table();
     int compared = 0;
@@ -877,6 +881,7 @@ void ImportAgainstMigration(const std::vector<Input>& inputs) {
         CHECK_MSG(diff.empty(), "comparison 2: the migration runs as the import read, less the approved changes");
 
         const std::string migrated = ReadFileBytes(s.ini());
+        distinct.insert(migrated);
         tow_ht::Config reread;
         const std::vector<std::string> diagnostics = CanonicalDiagnostics(migrated, reread);
         for (const std::string& d : diagnostics) std::printf("  %s: migrated file, %s\n", name, d.c_str());
@@ -902,7 +907,34 @@ void ImportAgainstMigration(const std::vector<Input>& inputs) {
         }
         ++compared;
     }
-    std::printf("comparison 2: %d inputs\n", compared);
+    std::printf("comparison 2: %d inputs, %zu distinct files\n", compared, distinct.size());
+}
+
+void WriteForLint(const std::set<std::string>& distinct) {
+    char exe[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    if (length == 0 || length == MAX_PATH) throw std::runtime_error("cannot read the test's own path");
+    std::string dir(exe, length);
+    dir = dir.substr(0, dir.find_last_of('\\')) + "\\migrated";
+    if (!CreateDirectoryA(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
+        throw std::runtime_error("cannot create " + dir + ", error " + std::to_string(GetLastError()));
+    }
+    WIN32_FIND_DATAA found;
+    const HANDLE h = FindFirstFileA((dir + "\\*.ini").c_str(), &found);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            const std::string stale = dir + "\\" + found.cFileName;
+            if (!DeleteFileA(stale.c_str())) throw std::runtime_error("cannot delete " + stale);
+        } while (FindNextFileA(h, &found));
+        FindClose(h);
+    }
+    int n = 0;
+    for (const std::string& bytes : distinct) {
+        const std::string path = dir + "\\" + std::to_string(n++) + ".ini";
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        if (!out) throw std::runtime_error("cannot write " + path);
+    }
 }
 
 }  // namespace
@@ -912,6 +944,8 @@ int main() {
     FirstRunFileIsThePublishedBuilds();
     const std::vector<Input> inputs = Inputs();
     OracleAgainstImport(inputs);
-    ImportAgainstMigration(inputs);
+    std::set<std::string> distinct;
+    ImportAgainstMigration(inputs, distinct);
+    WriteForLint(distinct);
     return tow_test::Report();
 }

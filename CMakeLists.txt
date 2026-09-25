@@ -226,6 +226,13 @@ if(TOW_BUILD_TESTS)
         TOW_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     add_test(NAME tow_config_differential_tests COMMAND tow_config_differential_tests)
 
+    # Core's canonical config lint over the committed file and every file the
+    # differential test migrated, which it writes beside itself under migrated\.
+    add_test(NAME tow_config_lint COMMAND node
+        ${CMAKE_SOURCE_DIR}/tests/config_differential/lint-migrated.mjs
+        $<TARGET_FILE_DIR:tow_config_differential_tests>/migrated)
+    set_tests_properties(tow_config_lint PROPERTIES DEPENDS tow_config_differential_tests)
+
     # The width check both Kismet traces run before writing a parameter frame
     # into a stack buffer at offsets read out of the engine's reflection data.
     add_executable(tow_kismet_frame_tests tests/kismet_frame_tests.cpp)
