@@ -36,6 +36,8 @@ set "ASI_SUBDIR="
 :: Files copied only when they are not already there, so an upgrade keeps
 :: whatever the user tuned. Listing an .ini in MOD_DLLS instead puts it through
 :: the unconditional copy and resets every key on every update.
+:: Empty: the mod creates CameraUnlock.ini at first launch, importing an
+:: existing HeadTracking.ini, so there is no shipped file to seed.
 set "MOD_SEED_FILES="
 :: Version of the vendored Ultimate ASI Loader, recorded in the state file so
 :: the launcher can tell which loader build it is looking at. Leave empty to

@@ -8,7 +8,7 @@
 
 namespace tow_ht::mod_hotkeys {
 
-// Register the hotkey lists HeadTracking.ini names, and start the poller. The
+// Register the hotkey lists CameraUnlock.ini names, and start the poller. The
 // session is what the tracking-mode cycle acts on. The mode cycle and the yaw
 // toggle save what they set; the tracking toggle changes the session only.
 // False when the poller thread did not start, in which case every binding it

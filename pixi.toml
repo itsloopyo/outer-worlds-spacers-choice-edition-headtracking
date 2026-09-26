@@ -34,9 +34,11 @@ setup = { cmd = """
 build = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 
-# Rewrites config/HeadTracking.ini, the committed canonical config, from the
-# table after a change to a row, a comment or a default, then re-encodes any
-# launcher seed from it. tow_config_tests fails while the two differ.
+# Rewrites config/HeadTracking.ini, the committed canonical config and the file
+# the mod creates as CameraUnlock.ini, from the table after a change to a row, a
+# comment or a default, then rewrites the launcher manifest config descriptor's
+# per_game from it where the manifest has one. tow_config_tests fails while the
+# two differ.
 render-config = { cmd = "build/Release/tow_config_tests.exe --render-config config/HeadTracking.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build"] }
 
 # The behaviour locks, the config conversion's differential test, and core's
@@ -78,9 +80,9 @@ conformance = "powershell -NoProfile -ExecutionPolicy Bypass -File cameraunlock-
 #
 # Depends on test, so no ZIP is built from a tree whose behaviour locks fail -
 # the config conversion's differential test above all, which proves that every
-# player's HeadTracking.ini converts as the published build read it. That
-# includes the tagged build: core's release-mod.yml runs this task and has no
-# test step of its own. release.ps1 still runs the tests once before it stamps
+# player's HeadTracking.ini is imported into CameraUnlock.ini as the published
+# build read it. That includes the tagged build: core's release-mod.yml runs
+# this task and has no test step of its own. release.ps1 still runs the tests once before it stamps
 # a version, so a failure normally stops a release before anything mutates.
 package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["test"] }
 

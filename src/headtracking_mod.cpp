@@ -166,7 +166,7 @@ constexpr int kMaxCollisionChannel = 255;
 
 // Read, convert or create the ini, and say what came back.
 void LoadConfig() {
-    g_config = config::Load(ExeDir());
+    g_config = config::Load(ExeDir(), cameraunlock::config::DefaultsFile::PerUser());
     if (g_config.collision_enabled &&
         (g_config.collision_channel < 0 || g_config.collision_channel > kMaxCollisionChannel)) {
         Log::Line("config: [Position] CollisionChannel=%d is not a collision channel (0-%d), so the "
@@ -265,7 +265,7 @@ DWORD WINAPI BootstrapThread(LPVOID) {
             g_config.yaw_mode_key.c_str(), g_config.udp_port);
     } else {
         Log::Line("init complete. NO HOTKEYS - the poller thread did not start, so no key "
-                  "changes anything this session; the mod runs on HeadTracking.ini alone. "
+                  "changes anything this session; the mod runs on CameraUnlock.ini alone. "
                   "Waiting for OpenTrack on UDP %d.", g_config.udp_port);
     }
 

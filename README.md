@@ -63,8 +63,8 @@ To place the files by hand instead, from the installer ZIP:
    rename it to `xinput1_3.dll`. The game EXE statically imports
    `XINPUT1_3.dll`, so the loader proxies that import and is loaded at startup.
 
-`HeadTracking.ini` is not in the ZIP. The mod creates it next to the `.asi` on
-first launch, with every setting at its default and commented.
+`CameraUnlock.ini`, the settings file, is not in the ZIP. The mod creates it
+next to the `.asi` on first launch, as Configuration below describes.
 
 Whether a mod manager will deploy this mod depends on that manager's profile
 for this game: a manager that deploys into one fixed subfolder cannot reach
@@ -144,10 +144,10 @@ Two equivalent binding sets - use whichever your keyboard has:
 | Cycle tracking mode | `Page Up` | `Ctrl+Shift+G` |
 | Toggle yaw mode (world/local) | `Page Down` | `Ctrl+Shift+H` |
 
-Each hotkey is a list of keys in `[Hotkeys]` of `HeadTracking.ini`, so you can
+Each hotkey is a list of keys in `[Hotkeys]` of `CameraUnlock.ini`, so you can
 rebind or remove any of them (see Configuration below).
 
-The tracking mode and the yaw mode you pick are saved to `HeadTracking.ini` and
+The tracking mode and the yaw mode you pick are saved to `CameraUnlock.ini` and
 come back the next time you start the game. `End` / `Ctrl+Shift+Y` changes the
 current session only: whether tracking is on at startup is `EnableOnStartup`.
 
@@ -161,7 +161,7 @@ game patch and there is no reason to press it in normal play. The cycle has 18
 positions, so pressing it once does not return by pressing it again, and one of
 the eighteen hands every one of the game's camera calls the head pose, which
 turns the aim decoupling off. Restarting the game returns to the setting in
-`HeadTracking.ini`, and `InjectModeKey` under `[Dev]` rebinds or removes the
+`CameraUnlock.ini`, and `InjectModeKey` under `[Dev]` rebinds or removes the
 key.
 
 `Page Up` / `Ctrl+Shift+G` cycles tracking mode:
@@ -184,9 +184,17 @@ them.
 ## Configuration
 
 <!-- cameraunlock:config -->
-The mod reads its settings from `Indiana\Binaries\Win64\HeadTracking.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
+The mod reads its settings from `Indiana\Binaries\Win64\CameraUnlock.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
 
-Earlier versions of the mod used an older layout for this file. The first time this version starts, it converts the file once into the layout below and keeps the file as it was beside it as `HeadTracking.ini.pre-canonical`. `HeadTracking.ini.pre-canonical.last`, when present, is the file as it was before the most recent conversion: the mod converts the file again when it finds the older layout later, for example after an older version of the mod rewrote it.
+A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it, and neither do earlier versions of this mod. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
+
+`Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
+
+When the mod starts and finds no `Defaults.ini`, it creates one holding the built-in values, unless Windows runs the game as a packaged app. The mod never changes `Defaults.ini` after that. Edit it with any text editor.
+
+Earlier versions of the mod kept these settings in `HeadTracking.ini`, in the same folder. The first time this version starts and finds no `CameraUnlock.ini`, it reads your settings from `HeadTracking.ini` and writes them into `CameraUnlock.ini`. It never changes `HeadTracking.ini`, and does not read it again while `CameraUnlock.ini` exists.
+
+A setting that the defaults below set to `default` is written as `default` when the value imported for it equals its default at that start, which is the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none. It then follows `Defaults.ini`. Every other setting is written with the value imported for it. `RotationEnabled` and `PositionEnabled` are one setting here, the tracking mode, so both are written as `default` or neither is.
 
 Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
 
@@ -194,7 +202,29 @@ Comments, and keys the mod never read, are not carried over. Nor are these, wher
 - A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
 - The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
 
-An older version of the mod may not read the new layout correctly. It reads a key that moved as its own default, and it can misread a hotkey or another value that is now written as a name. To go back to an older version, first copy `HeadTracking.ini.pre-canonical` back over `HeadTracking.ini`, which restores the old file.
+An older version of the mod reads `HeadTracking.ini` and never reads `CameraUnlock.ini`, so a setting you change after updating is not in `HeadTracking.ini`.
+
+Deleting only `CameraUnlock.ini` makes the next start read `HeadTracking.ini` again. To go back to the defaults, replace everything in `CameraUnlock.ini` with the defaults below. Every setting they set to `default` then follows `Defaults.ini`.
+
+The built-in value of each setting set to `default` below:
+
+- `UdpPort=4242`
+- `EnableOnStartup=true`
+- `WorldSpaceYaw=true`
+- `RotationEnabled=true`
+- `LocalSmoothing=0.0`
+- `RemoteSmoothing=0.15`
+- `PositionEnabled=true`
+- `PositionLimitX=0.3`
+- `PositionLimitY=0.2`
+- `PositionLimitYDown=0.2`
+- `PositionLimitZ=0.4`
+- `PositionLimitZBack=0.1`
+- `CollisionEnabled=true`
+- `CollisionReleaseSmoothing=0.9`
+- `ToggleKey=End, Ctrl+Shift+Y`
+- `CycleTrackingModeKey=PageUp, Ctrl+Shift+G`
+- `YawModeKey=PageDown, Ctrl+Shift+H`
 
 With every setting at its default, the file reads:
 
@@ -202,6 +232,12 @@ With every setting at its default, the file reads:
 ; The Outer Worlds: Spacer's Choice Edition head tracking settings.
 ; Comments start with ; and go on their own line. Text after a value is part of the value.
 ; Hotkeys are key names such as End, PageUp or Ctrl+Shift+Y. Separate several with commas; leave empty for none.
+; A setting set to default takes its value from Defaults.ini, which every head tracking mod
+; that keeps its settings in CameraUnlock.ini reads: %AppData%\CameraUnlock\Defaults.ini on
+; Windows, $XDG_CONFIG_HOME/CameraUnlock/Defaults.ini (normally ~/.config/CameraUnlock) on
+; Linux, under Wine and Proton too, and ~/Library/Application Support/CameraUnlock/Defaults.ini
+; on macOS. The log names the file it read. Write a value instead of default to change that
+; setting for this game only.
 
 [CameraUnlock]
 ; Written by the mod. Leave this section in place.
@@ -209,58 +245,58 @@ ConfigFormat=1
 
 [Network]
 ; UDP port the mod receives tracker data on (OpenTrack protocol).
-UdpPort=4242
+UdpPort=default
 
 [General]
 ; true: head tracking is on when the game starts. ToggleKey turns it on and off.
-EnableOnStartup=true
+EnableOnStartup=default
 ; true: yaw turns around the world's up axis. false: around the camera's own up axis.
-WorldSpaceYaw=true
+WorldSpaceYaw=default
 ; true: turning your head turns the view.
 ; Tracking mode at startup, with PositionEnabled. The mode hotkey changes both.
-RotationEnabled=true
+RotationEnabled=default
 ; true: centre the game window on the work area of its monitor at startup. Only a
 ; windowed game is moved; fullscreen and borderless are left alone.
 CenterWindow=true
 
 [Smoothing]
 ; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.
-LocalSmoothing=0.0
+LocalSmoothing=default
 ; Smoothing when the tracker is another device on the network, such as a phone.
 ; 0 is the least, 1 the most.
-RemoteSmoothing=0.15
+RemoteSmoothing=default
 
 [Position]
 ; true: moving your head moves the view.
 ; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
-PositionEnabled=true
+PositionEnabled=default
 ; How far, in metres, leaning left or right can move the view.
-PositionLimitX=0.3
+PositionLimitX=default
 ; How far, in metres, raising your head can move the view.
-PositionLimitY=0.2
+PositionLimitY=default
 ; How far, in metres, lowering your head can move the view.
-PositionLimitYDown=0.2
+PositionLimitYDown=default
 ; How far, in metres, leaning forward can move the view.
-PositionLimitZ=0.4
+PositionLimitZ=default
 ; How far, in metres, leaning back can move the view.
-PositionLimitZBack=0.1
+PositionLimitZBack=default
 ; true: leaning stops at walls instead of moving the view through them.
-CollisionEnabled=false
+CollisionEnabled=default
 ; How far the view is held off a wall when you lean into it, in centimetres.
-CollisionMargin=12.0
+; CollisionMargin=12.0
 ; Which of the game's collision channels the wall check tests against.
 ; CollisionChannel=0
 ; How gently the view eases back out after a wall stopped a lean.
 ; 0 is the quickest, 1 the slowest.
-CollisionReleaseSmoothing=0.9
+CollisionReleaseSmoothing=default
 
 [Hotkeys]
 ; Turns head tracking on and off.
-ToggleKey=End, Ctrl+Shift+Y
+ToggleKey=default
 ; Changes the tracking mode: rotation and position, rotation only, position only.
-CycleTrackingModeKey=PageUp, Ctrl+Shift+G
+CycleTrackingModeKey=default
 ; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
-YawModeKey=PageDown, Ctrl+Shift+H
+YawModeKey=default
 
 [Aim]
 ; Which of the game's collision channels the aim cast tests against, 0 to 255. The cast
@@ -334,16 +370,18 @@ field of view, and the slider takes effect as you drag it, with no restart.
 
 **Leaning hard into a wall puts the view through it**
 
-- The lean collision sweep is what stops that, and it ships turned off. Set
-  `CollisionEnabled=true` in `[Position]`. `CollisionMargin` is how far off a
-  surface the eye is held, in centimeters; `CollisionChannel` is which
-  collision channel the sweep tests against (delete the `; ` in front of it to
-  set it); `CollisionReleaseSmoothing` is how quickly the lean reopens once an
-  obstruction clears.
+- The lean collision sweep is what stops that. It runs while `CollisionEnabled`
+  in `[Position]` is `true`, which is its built-in value. `CollisionMargin` is
+  how far off a surface the eye is held, in centimeters; `CollisionChannel` is
+  which collision channel the sweep tests against (delete the `; ` in front of
+  either to set it); `CollisionReleaseSmoothing` is how quickly the lean reopens
+  once an obstruction clears.
 - `HeadTracking.log` says what the sweep is doing: `lean-clamp: contact=yes`
   when it is holding the eye off geometry, `contact=no` when the room is open,
   and `query=FAILED (lean unclamped)` when the sweep could not run at all. If
-  channel `0` stays silent against a solid wall, try `1` and `2`.
+  channel `0` stays silent against a solid wall, try `1` and `2`. If a lean
+  stops short with nothing in the way and the log says `contact=yes`, set
+  `CollisionEnabled=false` to turn the sweep off.
 
 **View sits off center, or yaw feels wrong**
 
@@ -366,7 +404,7 @@ field of view, and the slider takes effect as you drag it, with no restart.
   fullscreen or borderless window is left alone, and so is one already centered
   on that work area. A window the game centered on the whole monitor sits half a
   taskbar low, so it does get nudged up. Set `CenterWindow=false` in
-  `HeadTracking.ini` to leave your window where it is.
+  `CameraUnlock.ini` to leave your window where it is.
 
 ## Updating
 
@@ -375,12 +413,10 @@ Download the new release and run `install.cmd` again. Your config is preserved.
 ## Uninstalling
 
 Run `uninstall.cmd`. This removes the mod DLLs and the two log files, and leaves
-`HeadTracking.ini` in place, with any copies the mod kept of it, so your
-settings are still there if you install again. The ASI loader is only removed if
-the installer put it there; `uninstall.cmd /force` removes it anyway. To leave
-the game folder fully vanilla, also delete `HeadTracking.ini` by hand, and
-`HeadTracking.ini.pre-canonical` and `HeadTracking.ini.pre-canonical.last` where
-they are there.
+`CameraUnlock.ini` and `HeadTracking.ini` in place, so your settings are still
+there if you install again. It does not touch `Defaults.ini`. The ASI loader is
+only removed if the installer put it there; `uninstall.cmd /force` removes it
+anyway.
 
 ## Building from Source
 

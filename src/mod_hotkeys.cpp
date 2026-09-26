@@ -73,7 +73,7 @@ bool Register(Session& session, const Config& config) {
     g_session = &session;
     g_poller = std::make_unique<cameraunlock::input::HotkeyPoller>();
 
-    // Each list from HeadTracking.ini. A binding without modifiers does not fire
+    // Each list from CameraUnlock.ini. A binding without modifiers does not fire
     // while Ctrl and Shift are both held, so a chord reaches only the action
     // that names it.
     cameraunlock::input::RegisterKeyBindings(*g_poller, Bindings("ToggleKey", config.toggle_key),
@@ -106,7 +106,7 @@ bool Register(Session& session, const Config& config) {
     if (!started) {
         Log::Line("WARN: the hotkey poller thread did not start, so no hotkey does "
                   "anything this session. Tracking runs on whatever "
-                  "HeadTracking.ini says.");
+                  "CameraUnlock.ini says.");
         return false;
     }
     return true;

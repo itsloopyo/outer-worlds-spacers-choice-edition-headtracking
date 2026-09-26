@@ -43,10 +43,11 @@ struct Config {
     float limit_z = cameraunlock::PositionSettings{}.limit_z;
     float limit_z_back = cameraunlock::PositionSettings{}.limit_z_back;
 
-    // Lean collision. Off by default: the sweep calls into the engine every
-    // rendered frame the head is off centre, and an unverified trace channel
-    // either blocks on nothing or blocks on everything.
-    bool collision_enabled = false;
+    // Lean collision. CollisionEnabled is global, so this is the schema's
+    // built-in true that Defaults.ini falls back to. The sweep runs every
+    // rendered frame the head is off centre, and trace channel 0 has not yet
+    // been seen stopping on this game's geometry.
+    bool collision_enabled = true;
     // Centimetres, the engine's unit. The swept sphere's radius, so it has to
     // exceed the camera's near clip distance to keep a wall from being cut away.
     float collision_margin = 12.0f;
@@ -89,25 +90,28 @@ struct Config {
 
 }  // namespace tow_ht
 
-// HeadTracking.ini, next to the game exe, in cameraunlock-core's canonical
+// CameraUnlock.ini, next to the game exe, in cameraunlock-core's canonical
 // config format. One ConfigOwner reads and writes it; nothing else in the mod
-// touches the file.
+// touches it. HeadTracking.ini, the file the builds before it read, is imported
+// once while CameraUnlock.ini is absent and is never written.
 namespace tow_ht::config {
 
-// The rows of HeadTracking.ini.
+// The rows of CameraUnlock.ini.
 cameraunlock::config::ConfigTable<Config> Table();
 
 // What the renderer writes above the rows.
 cameraunlock::config::RenderHeader Header();
 
-// The owner's options for the file at `path`: the table, the frozen legacy
-// import and the header.
-cameraunlock::config::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& path);
+// The owner's options for CameraUnlock.ini in `exe_dir`, with HeadTracking.ini
+// beside it as the legacy file and Defaults.ini where `defaults` says.
+cameraunlock::config::ConfigOwnerOptions<Config> OwnerOptions(const std::wstring& exe_dir,
+                                                              cameraunlock::config::DefaultsFile defaults);
 
-// Reads, converts or creates HeadTracking.ini in `exe_dir`, logs what the owner
+// Reads, imports or creates CameraUnlock.ini in `exe_dir`, logs what the owner
 // reports, and returns the settings the session runs on. Call once, from the
-// bootstrap thread, with the log open. `exe_dir` must be a full path.
-Config Load(const std::wstring& exe_dir);
+// bootstrap thread, with the log open. `exe_dir` must be a full path, and
+// `defaults` is DefaultsFile::PerUser() in the mod.
+Config Load(const std::wstring& exe_dir, cameraunlock::config::DefaultsFile defaults);
 
 // Save the value a hotkey has just applied. The session keeps it whether or not
 // the save succeeds; a failed save is logged. Called from the hotkey thread.
