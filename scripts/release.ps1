@@ -105,6 +105,7 @@ try {
     # Get-ProjectVersion to check the tag against the built artifact.
     $current = Get-ProjectVersion -Source 'cmake' -Path 'CMakeLists.txt'
     $new = Resolve-ReleaseVersion -Argument $Version -CurrentVersion $current
+    Assert-ReleaseNotBelowCanonicalSince -RepoRoot $root -Version $new
 
     # New-ReleaseTag pushes to `main`, so releasing from any other branch would
     # push commits that branch does not contain. Gate before anything mutates.
