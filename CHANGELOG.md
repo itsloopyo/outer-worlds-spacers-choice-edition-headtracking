@@ -26,6 +26,8 @@
 - The lean collision sweep is on by default. Its switch, `[Collision] Enabled`, is now `CollisionEnabled` under `[Position]`, and its built-in value is `true`. It was the feature earlier versions shipped switched off while untested, so the import does not carry it: the sweep runs unless `CollisionEnabled` is `false` in `CameraUnlock.ini`, or is `default` there and `false` in `Defaults.ini`.
 - `uninstall.cmd` leaves `CameraUnlock.ini` and `HeadTracking.ini` in place, so your settings survive a reinstall. It used to delete `HeadTracking.ini`.
 - Head tracking stays on while you aim down sights, and the lean eases out while the sights are up. The ADS mode cycle is gone: `[Aim] AdsMode` is no longer read, and `Insert` and `Ctrl+Shift+U` do nothing (c7a9c9b).
+- A setting that the defaults the README shows set to `default` is written as `default` when you never changed it from the default earlier versions used, because `HeadTracking.ini` does not hold it or holds that default. It then follows `Defaults.ini`, so it takes the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none, which can differ from the default earlier versions used. A setting you changed is written with the value imported for it, or as `default` where that value equals its default at that start. The toggle and tracking mode hotkeys were fixed in earlier versions, so they are always written as `default`.
+- A `YawModeKey` set to Ctrl, Shift or Alt on its own is not carried over. That key goes down before the key of any chord made with it, so the key is left unbound and the yaw mode keeps its `Ctrl+Shift+H` chord.
 
 ### Removed
 

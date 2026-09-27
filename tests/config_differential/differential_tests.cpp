@@ -26,10 +26,22 @@
 // (follows_default). That switch is also the one default the conversion moved,
 // from off to the schema's built-in on, so the no-file input differs there too.
 //
+// A legacy yaw key on a Ctrl, Shift or Alt key alone imports as unbound and
+// keeps its Ctrl+Shift+H chord (normalisation N3).
+//
+// A row the player never changed from what the frozen build shipped follows
+// Defaults.ini: the import lists it in follows_defaults_ini and the migration
+// writes it `default`, the tracking mode pair as one unit. The test derives that
+// list from what the import read, a row whose every observed value is the
+// shipped one, and holds the import's list to it on every input. The toggle and
+// mode cycle keys were bound in code, so they always follow it.
+//
 // Each input is migrated three times: over a Defaults.ini at the built-in
 // values, with the legacy file read-only, and over a Defaults.ini that differs
-// from the built-in values on every global row. Each migration must run on what
-// the import read, and the next start must read CameraUnlock.ini and write
+// from the built-in values on every global row. Over the first two each
+// migration must run on what the import read; over the third a row the player
+// never changed is `default` and takes Defaults.ini's value, and a changed row
+// keeps the player's. The next start must read CameraUnlock.ini and write
 // nothing. HeadTracking.ini keeps its bytes, write time and attributes
 // throughout, and the folder holds it and CameraUnlock.ini and nothing else.
 //
@@ -75,6 +87,7 @@ namespace {
 
 using cameraunlock::TrackingMode;
 namespace cfg = cameraunlock::config;
+using cfg::schema::Concept;
 namespace testing = cameraunlock::config::testing;
 
 // ---- Provenance ------------------------------------------------------------
@@ -85,8 +98,10 @@ namespace testing = cameraunlock::config::testing;
 // The core files both readers compile are hash-equal to c480d8a's, and so are
 // src/logging.h, src/inject_mode.h and src/legacy_config/config_sanitize.h,
 // which is v0.1.0's src/config_sanitize.h moved. So the readers differ only
-// where the mod's own reader changed. The frozen import is pinned at the commit
-// that froze it, so nothing edits it afterwards.
+// where the mod's own reader changed. The frozen reader is pinned at the commit
+// that froze it. The map in legacy_import.cpp is pinned too and moved once, by
+// the owner's rule of 2026-09-26 that a setting the player never changed
+// follows Defaults.ini, with N3.
 
 struct Pinned {
     const char* path;
@@ -124,8 +139,8 @@ constexpr Pinned kPinned[] = {
     {"src/inject_mode.h", "81578f46ae65c45fd8957553f3ffa88a63170f90384faedc979a0eca1ee49c36"},
     {"src/legacy_config/config_sanitize.h", "d579938044e5b2d55864b70017f29a72aedd32100f94cc91fce33a254161c06c"},
     {"src/legacy_config/legacy_config.h", "674c3f6b14bf663246347d8ea00f8b52d0b84b36d510eeccb70937c0fde9d3ed"},
-    {"src/legacy_config/legacy_import.h", "ea1cb7dacb07d0a5a4192d7ac7c5920119a635febe62e64d5dec6684fe2d584a"},
-    {"src/legacy_config/legacy_import.cpp", "dfff6e531da1ead88af71186db569835e65283747d2a9cfd7316ed0a4b571e46"},
+    {"src/legacy_config/legacy_import.h", "efcb39399acb55fd08ee92b2f8bb8ee52525355ccec89f5ac0bab5d1119155d0"},
+    {"src/legacy_config/legacy_import.cpp", "136afefa03650aad844eadabac01877c9304e9997a612223cf8c4061e5a0595d"},
     {"src/legacy_config/legacy_config.cpp", "6841b38f9f69c9113827ca291519c9319ea7ffd06db4a46e613069e52cbf0cb8"},
 };
 
@@ -624,6 +639,76 @@ PoseShaping LegacyPoseShapingOf(const tow_ht::legacy::Config& c) {
             {c.position_sensitivity_x, c.position_sensitivity_y, c.position_sensitivity_z}};
 }
 
+// ---- Rows that follow Defaults.ini -----------------------------------------------
+
+// Every global row the table binds, each of which follows Defaults.ini.
+const std::set<Concept>& AllRows() {
+    static const std::set<Concept> all = {
+        Concept::UdpPort,          Concept::EnableOnStartup,
+        Concept::WorldSpaceYaw,    Concept::RotationEnabled,
+        Concept::PositionEnabled,  Concept::LocalSmoothing,
+        Concept::RemoteSmoothing,  Concept::PositionLimitX,
+        Concept::PositionLimitY,   Concept::PositionLimitYDown,
+        Concept::PositionLimitZ,   Concept::PositionLimitZBack,
+        Concept::CollisionEnabled, Concept::CollisionReleaseSmoothing,
+        Concept::ToggleKey,        Concept::CycleTrackingModeKey,
+        Concept::YawModeKey,
+    };
+    return all;
+}
+
+std::vector<Hotkey> BindingsOf(const std::vector<Hotkey>& hotkeys, int action) {
+    std::vector<Hotkey> out;
+    for (const Hotkey& h : hotkeys) {
+        if (std::get<0>(h) == action) out.push_back(h);
+    }
+    return out;
+}
+
+// The rows the player never changed: every value the row stands for reads as it
+// does with no file, the frozen build's defaults. The mode pair is both rows or
+// neither.
+std::set<Concept> UntouchedRows(const Observed& read) {
+    const Observed shipped = ObserveLegacy(tow_ht::legacy::Config{});
+    std::set<Concept> changed;
+    if (read.udp_port != shipped.udp_port) changed.insert(Concept::UdpPort);
+    if (read.start_enabled != shipped.start_enabled) changed.insert(Concept::EnableOnStartup);
+    if (read.start_world_yaw != shipped.start_world_yaw) changed.insert(Concept::WorldSpaceYaw);
+    if (read.start_mode != shipped.start_mode) {
+        changed.insert(Concept::RotationEnabled);
+        changed.insert(Concept::PositionEnabled);
+    }
+    if (Bits(read.local_smoothing) != Bits(shipped.local_smoothing)) changed.insert(Concept::LocalSmoothing);
+    if (Bits(read.remote_smoothing) != Bits(shipped.remote_smoothing)) changed.insert(Concept::RemoteSmoothing);
+    const Concept limits[5] = {Concept::PositionLimitX, Concept::PositionLimitY, Concept::PositionLimitYDown,
+                               Concept::PositionLimitZ, Concept::PositionLimitZBack};
+    for (int i = 0; i < 5; ++i) {
+        if (Bits(read.limits[i]) != Bits(shipped.limits[i])) changed.insert(limits[i]);
+    }
+    if (read.collision_enabled != shipped.collision_enabled) changed.insert(Concept::CollisionEnabled);
+    if (Bits(read.collision_release_smoothing) != Bits(shipped.collision_release_smoothing)) {
+        changed.insert(Concept::CollisionReleaseSmoothing);
+    }
+    const std::pair<int, Concept> keys[] = {
+        {kToggle, Concept::ToggleKey}, {kCycleMode, Concept::CycleTrackingModeKey}, {kYawMode, Concept::YawModeKey}};
+    for (const auto& [action, row] : keys) {
+        if (BindingsOf(read.hotkeys, action) != BindingsOf(shipped.hotkeys, action)) changed.insert(row);
+    }
+    std::set<Concept> untouched;
+    for (const Concept row : AllRows()) {
+        if (!changed.count(row)) untouched.insert(row);
+    }
+    return untouched;
+}
+
+std::string Names(const std::set<Concept>& rows) {
+    std::string text;
+    for (const Concept row : rows) {
+        text += (text.empty() ? "" : ", ") + std::string(cfg::schema::kConcepts[static_cast<std::size_t>(row)].name);
+    }
+    return text.empty() ? "none" : text;
+}
+
 // ---- Inputs --------------------------------------------------------------------
 
 std::string DataPath(const char* name) {
@@ -695,6 +780,16 @@ std::vector<Input> Inputs() {
         {"no file", false, {}},
         {"empty file", true, {}},
     };
+    // N3: a yaw key the frozen reader accepts that is a Ctrl, Shift or Alt key
+    // alone.
+    for (const char* code : {"0x10", "0x11", "0x12", "0xA0", "0xA5"}) {
+        std::string bytes = FirstRunFile();
+        const std::string shipped = "YawModeKey=0x22";
+        const std::size_t at = bytes.find(shipped);
+        if (at == std::string::npos) throw std::runtime_error("the first-run file has no YawModeKey=0x22");
+        bytes.replace(at, shipped.size(), std::string("YawModeKey=") + code);
+        inputs.push_back({std::string("yaw key ") + code, true, std::move(bytes)});
+    }
     for (testing::IniMutation& m : testing::GenerateIniMutations(FirstRunFile(), CorpusReads(), CorpusKeys())) {
         inputs.push_back({"corpus: " + m.name, true, std::move(m.bytes)});
     }
@@ -800,6 +895,14 @@ Observed ExpectedMigration(const tow_ht::legacy::Config& read, std::vector<cfg::
         drops.push_back({cfg::DropRule::FollowsDefault, "Collision", "Enabled", "false"});
         o.collision_enabled = true;
     }
+    // N3: a yaw key on Ctrl, Shift or Alt alone is unbound, and the chord stays.
+    const int yaw = read.yaw_mode_key;
+    if ((yaw >= 0x10 && yaw <= 0x12) || (yaw >= 0xA0 && yaw <= 0xA5)) {
+        char code[8];
+        std::snprintf(code, sizeof(code), "0x%X", yaw);
+        drops.push_back({cfg::DropRule::ModifierKey, "Hotkeys", "YawModeKey", code});
+        o.hotkeys.erase(std::find(o.hotkeys.begin(), o.hotkeys.end(), Hotkey{kYawMode, yaw, kPlain}));
+    }
     if (!o.crosshair_follows) {
         drops.push_back({cfg::DropRule::Reticle, "Reticle", "Enabled", "false"});
         o.crosshair_follows = true;
@@ -885,6 +988,40 @@ constexpr const char* kPlayerDefaults =
     "PositionLimitZ=0.6\r\nPositionLimitZBack=0.2\r\nCollisionEnabled=false\r\nCollisionReleaseSmoothing=0.5\r\n"
     "[Hotkeys]\r\nToggleKey=F8\r\nCycleTrackingModeKey=F9\r\nYawModeKey=F10\r\n";
 
+// What the session runs on over kPlayerDefaults: `o`, with each row the import
+// left to Defaults.ini as that file gives it.
+Observed OverPlayerDefaults(Observed o, const std::set<Concept>& follows) {
+    const auto follows_row = [&](Concept row) { return follows.count(row) != 0; };
+    if (follows_row(Concept::UdpPort)) o.udp_port = 5151;
+    if (follows_row(Concept::EnableOnStartup)) o.start_enabled = false;
+    if (follows_row(Concept::WorldSpaceYaw)) o.start_world_yaw = false;
+    if (follows_row(Concept::RotationEnabled)) o.start_mode = static_cast<int>(TrackingMode::PositionOnly);
+    if (follows_row(Concept::LocalSmoothing)) o.local_smoothing = 0.25f;
+    if (follows_row(Concept::RemoteSmoothing)) o.remote_smoothing = 0.5f;
+    const std::pair<Concept, float> limits[5] = {{Concept::PositionLimitX, 0.5f}, {Concept::PositionLimitY, 0.3f},
+                                                 {Concept::PositionLimitYDown, 0.1f}, {Concept::PositionLimitZ, 0.6f},
+                                                 {Concept::PositionLimitZBack, 0.2f}};
+    for (int i = 0; i < 5; ++i) {
+        if (follows_row(limits[i].first)) o.limits[i] = limits[i].second;
+    }
+    if (follows_row(Concept::CollisionEnabled)) o.collision_enabled = false;
+    if (follows_row(Concept::CollisionReleaseSmoothing)) o.collision_release_smoothing = 0.5f;
+    // F8, F9 and F10.
+    const std::tuple<Concept, int, int> keys[] = {{Concept::ToggleKey, kToggle, 0x77},
+                                                  {Concept::CycleTrackingModeKey, kCycleMode, 0x78},
+                                                  {Concept::YawModeKey, kYawMode, 0x79}};
+    for (const auto& [row, action, vk] : keys) {
+        if (!follows_row(row)) continue;
+        const int a = action;
+        o.hotkeys.erase(std::remove_if(o.hotkeys.begin(), o.hotkeys.end(),
+                                       [a](const Hotkey& h) { return std::get<0>(h) == a; }),
+                        o.hotkeys.end());
+        o.hotkeys.push_back({action, vk, kPlain});
+    }
+    std::sort(o.hotkeys.begin(), o.hotkeys.end());
+    return o;
+}
+
 // How one migration of an input is set up.
 enum class Setup { kBuiltInDefaults, kReadOnlyLegacy, kPlayerDefaults };
 
@@ -959,6 +1096,8 @@ void ImportAgainstMigration(const std::vector<Input>& inputs, std::set<std::stri
     const std::string committed = ReadFileBytes(std::string(TOW_SOURCE_DIR) + "/config/HeadTracking.ini");
     const cfg::ConfigTable<tow_ht::Config> table = tow_ht::config::Table();
     int compared = 0;
+    int touched = 0;
+    int mode_touched = 0;
     for (const Input& input : inputs) {
         const char* name = input.name.c_str();
 
@@ -989,21 +1128,48 @@ void ImportAgainstMigration(const std::vector<Input>& inputs, std::set<std::stri
         if (!drops_ok) std::printf("  comparison 2, %s: dropped values\n", name);
         CHECK_MSG(drops_ok, "comparison 2: the only drops are the approved changes");
 
+        const std::set<Concept> follows(imported.follows_defaults_ini.begin(), imported.follows_defaults_ini.end());
+        CHECK_MSG(follows.size() == imported.follows_defaults_ini.size(), "follows_defaults_ini names each row once");
+        const std::set<Concept> untouched = UntouchedRows(ObserveLegacy(read));
+        if (follows != untouched) {
+            std::printf("  %s: follows Defaults.ini %s, untouched %s\n", name, Names(follows).c_str(),
+                        Names(untouched).c_str());
+        }
+        CHECK_MSG(follows == untouched, "the rows left to Defaults.ini are exactly the ones the player never changed");
+        if (untouched != AllRows()) ++touched;
+        if (!untouched.count(Concept::RotationEnabled)) ++mode_touched;
+        const bool unedited =
+            input.name == "v0.1.0 first-run file" || input.name == "no file" || input.name == "empty file";
+        if (unedited) CHECK_MSG(untouched == AllRows(), "an unedited input leaves every row to Defaults.ini");
+
         const std::string migrated = Migrate(input, Setup::kBuiltInDefaults, expected);
         distinct.insert(migrated);
         CHECK_MSG(Migrate(input, Setup::kReadOnlyLegacy, expected) == migrated,
                   "a read-only HeadTracking.ini is imported as a writable one is");
-        distinct.insert(Migrate(input, Setup::kPlayerDefaults, expected));
+        const std::string over_player =
+            Migrate(input, Setup::kPlayerDefaults, OverPlayerDefaults(expected, follows));
+        distinct.insert(over_player);
+        if (input.present) {
+            for (const Concept row : follows) {
+                const std::string key = cfg::schema::kConcepts[static_cast<std::size_t>(row)].key;
+                const bool is_default = over_player.find("\r\n" + key + "=default\r\n") != std::string::npos;
+                if (!is_default) std::printf("  %s, player's Defaults.ini: %s is not default\n", name, key.c_str());
+                CHECK_MSG(is_default, "a row the player never changed is written default");
+            }
+        }
 
         // Fresh equals upgrade: over the built-in Defaults.ini, the published
-        // build's first-run file and no file at all both end as the committed
-        // file.
-        if (input.name == "v0.1.0 first-run file" || input.name == "no file") {
-            CHECK_MSG(migrated == committed, "the first-run file and no file both give the committed file");
+        // build's first-run file, an empty file and no file at all end as the
+        // committed file, `default` on every global row.
+        if (unedited) {
+            CHECK_MSG(migrated == committed, "the first-run file, an empty file and no file give the committed file");
         }
         ++compared;
     }
     std::printf("comparison 2: %d inputs, %zu distinct files\n", compared, distinct.size());
+    std::printf("%d inputs changed a row from the shipped default, %d of them the tracking mode\n", touched,
+                mode_touched);
+    CHECK_MSG(touched > 0 && mode_touched > 0, "the corpus changes rows, the tracking mode among them");
 }
 
 void WriteForLint(const std::set<std::string>& distinct) {

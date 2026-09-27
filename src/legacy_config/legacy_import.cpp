@@ -23,6 +23,7 @@ namespace tow_ht::legacy {
 namespace {
 
 namespace cfg = ::cameraunlock::config;
+using cfg::schema::Concept;
 using ::cameraunlock::input::FormatKeyBindings;
 using ::cameraunlock::input::KeyModifiers;
 
@@ -96,7 +97,9 @@ cfg::ImportResult Run(const cfg::LegacyInput& input, tow_ht::Config& out) {
     // inside 0x01-0xFE.
     out.toggle_key = FormatKeyBindings({{KeyModifiers::kNone, kVkEnd}, {kChord, kVkY}});
     out.cycle_tracking_mode_key = FormatKeyBindings({{KeyModifiers::kNone, kVkPageUp}, {kChord, kVkG}});
-    out.yaw_mode_key = FormatKeyBindings({{KeyModifiers::kNone, read.yaw_mode_key}, {kChord, kVkH}});
+    const std::string yaw_key = cfg::LegacyVirtualKeyToBindings(read.yaw_mode_key, "Hotkeys", "YawModeKey", dropped);
+    out.yaw_mode_key = yaw_key.empty() ? FormatKeyBindings({{kChord, kVkH}})
+                                       : yaw_key + ", " + FormatKeyBindings({{kChord, kVkH}});
     out.inject_mode_key = FormatKeyBindings({{kChord, kVkJ}});
 
     // The game's crosshair now always follows the aim, over the widgets the mod
@@ -126,8 +129,30 @@ cfg::ImportResult Run(const cfg::LegacyInput& input, tow_ht::Config& out) {
     cfg::LegacyPoseShaping(read.position_sensitivity_z, shipped.position_sensitivity_z, "Position", "SensitivityZ",
                            pose, dropped);
 
-    return present ? cfg::ImportResult::Imported(std::move(dropped), std::move(pose))
-                   : cfg::ImportResult::Absent(std::move(dropped), std::move(pose));
+    // A setting the player never changed from what the frozen build shipped
+    // follows Defaults.ini. LimitY stood for both vertical bounds, and the
+    // toggle and mode cycle keys were bound in code, out of the player's reach.
+    cfg::LegacyFollowsDefaultsIni follows;
+    follows.Setting(Concept::UdpPort, read.udp_port, shipped.udp_port);
+    follows.Setting(Concept::EnableOnStartup, read.enable_on_startup, shipped.enable_on_startup);
+    follows.Setting(Concept::WorldSpaceYaw, read.world_space_yaw, shipped.world_space_yaw);
+    follows.TrackingMode(read.position_enabled, shipped.position_enabled);
+    follows.Setting(Concept::LocalSmoothing, read.local_smoothing, shipped.local_smoothing);
+    follows.Setting(Concept::RemoteSmoothing, read.remote_smoothing, shipped.remote_smoothing);
+    follows.Setting(Concept::PositionLimitX, read.limit_x, shipped.limit_x);
+    follows.Setting(Concept::PositionLimitY, read.limit_y, shipped.limit_y);
+    follows.Setting(Concept::PositionLimitYDown, read.limit_y, shipped.limit_y);
+    follows.Setting(Concept::PositionLimitZ, read.limit_z, shipped.limit_z);
+    follows.Setting(Concept::PositionLimitZBack, read.limit_z_back, shipped.limit_z_back);
+    follows.Setting(Concept::CollisionEnabled, read.collision_enabled, shipped.collision_enabled);
+    follows.Setting(Concept::CollisionReleaseSmoothing, read.collision_release_smoothing,
+                    shipped.collision_release_smoothing);
+    follows.NotInLegacy(Concept::ToggleKey);
+    follows.NotInLegacy(Concept::CycleTrackingModeKey);
+    follows.Setting(Concept::YawModeKey, read.yaw_mode_key, shipped.yaw_mode_key);
+
+    return present ? cfg::ImportResult::Imported(std::move(dropped), std::move(pose), follows.Concepts())
+                   : cfg::ImportResult::Absent(std::move(dropped), std::move(pose), follows.Concepts());
 }
 
 }  // namespace

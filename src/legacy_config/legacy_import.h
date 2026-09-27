@@ -9,8 +9,9 @@
 
 // The legacy import the config owner runs on a HeadTracking.ini with no
 // [CameraUnlock] stamp: the frozen reader in legacy_config.h, then a map from
-// what it read into the canonical Config. Frozen like the reader: never edit it,
-// since a player can update from any older build.
+// what it read into the canonical Config. Frozen like the reader, since a player
+// can update from any older build: the map changes only by an owner ruling on
+// how a legacy file migrates, and the differential test pins it.
 namespace tow_ht::legacy {
 
 cameraunlock::config::LegacyImport<tow_ht::Config> Import();
