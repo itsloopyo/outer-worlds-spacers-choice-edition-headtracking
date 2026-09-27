@@ -307,8 +307,8 @@ PoseLog=false
 ; path after a game patch, and 0 hands every caller the head pose, which turns aim
 ; decoupling off.
 InjectMode=-1
-; Steps through the inject modes in game, for the same job. The next start goes back
-; to InjectMode.
+; Steps through the inject modes in game other than 0, for the same job. The next start
+; goes back to InjectMode.
 InjectModeKey=Ctrl+Shift+J
 ```
 <!-- /cameraunlock:config -->
@@ -360,7 +360,7 @@ field of view, and the slider takes effect as you drag it, with no restart.
   in `[Position]` is `true`, which is its built-in value. `CollisionMargin` is
   how far off a surface the eye is held, in centimeters; `CollisionChannel` is
   which collision channel the sweep tests against (delete the `; ` in front of
-  either to set it); `CollisionReleaseSmoothing` is how quickly the lean reopens
+  it to set it); `CollisionReleaseSmoothing` is how quickly the lean reopens
   once an obstruction clears.
 - `HeadTracking.log` says what the sweep is doing: `lean-clamp: contact=yes`
   when it is holding the eye off geometry, `contact=no` when the room is open,

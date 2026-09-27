@@ -13,12 +13,13 @@
 ### Changed
 
 - Settings move to `Indiana\Binaries\Win64\CameraUnlock.ini`. Earlier versions of the mod kept these settings in `HeadTracking.ini`, in the same folder. The first time this version starts and finds no `CameraUnlock.ini`, it reads your settings from `HeadTracking.ini` and writes them into `CameraUnlock.ini`. It never changes `HeadTracking.ini`, and does not read it again while `CameraUnlock.ini` exists.
-- A setting that the defaults the README shows set to `default` is written as `default` when the value imported for it equals its default at that start, which is the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none. It then follows `Defaults.ini`. Every other setting is written with the value imported for it.
+- A setting that the defaults the README shows set to `default` is written as `default` when you never changed it from the default earlier versions used, because `HeadTracking.ini` does not hold it or holds that default. It then follows `Defaults.ini`, so it takes the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none, which can differ from the default earlier versions used. A setting you changed is written with the value imported for it, or as `default` where that value equals its default at that start. The toggle and tracking mode hotkeys were fixed in earlier versions, so they are always written as `default`.
 - `RotationEnabled` and `PositionEnabled` are one setting here, the tracking mode, so both are written as `default` or neither is.
 - Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
   - A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
   - Reticle settings, and a key that toggled the reticle.
   - The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+  - A `YawModeKey` set to Ctrl, Shift or Alt on its own. That key goes down before the key of any chord made with it, so the key is left unbound and the yaw mode keeps its `Ctrl+Shift+H` chord.
 - An older version of the mod reads `HeadTracking.ini` and never reads `CameraUnlock.ini`, so a setting you change after updating is not in `HeadTracking.ini`.
 - Deleting only `CameraUnlock.ini` makes the next start read `HeadTracking.ini` again. To go back to the defaults, replace everything in `CameraUnlock.ini` with the defaults the README shows. Every setting they set to `default` then follows `Defaults.ini`.
 - Hotkeys are written as key names, and each hotkey lists every key that triggers it, the Ctrl+Shift chord included: `ToggleKey=End, Ctrl+Shift+Y`.
@@ -26,8 +27,7 @@
 - The lean collision sweep is on by default. Its switch, `[Collision] Enabled`, is now `CollisionEnabled` under `[Position]`, and its built-in value is `true`. It was the feature earlier versions shipped switched off while untested, so the import does not carry it: the sweep runs unless `CollisionEnabled` is `false` in `CameraUnlock.ini`, or is `default` there and `false` in `Defaults.ini`.
 - `uninstall.cmd` leaves `CameraUnlock.ini` and `HeadTracking.ini` in place, so your settings survive a reinstall. It used to delete `HeadTracking.ini`.
 - Head tracking stays on while you aim down sights, and the lean eases out while the sights are up. The ADS mode cycle is gone: `[Aim] AdsMode` is no longer read, and `Insert` and `Ctrl+Shift+U` do nothing (c7a9c9b).
-- A setting that the defaults the README shows set to `default` is written as `default` when you never changed it from the default earlier versions used, because `HeadTracking.ini` does not hold it or holds that default. It then follows `Defaults.ini`, so it takes the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none, which can differ from the default earlier versions used. A setting you changed is written with the value imported for it, or as `default` where that value equals its default at that start. The toggle and tracking mode hotkeys were fixed in earlier versions, so they are always written as `default`.
-- A `YawModeKey` set to Ctrl, Shift or Alt on its own is not carried over. That key goes down before the key of any chord made with it, so the key is left unbound and the yaw mode keeps its `Ctrl+Shift+H` chord.
+- The diagnostic `Ctrl+Shift+J` no longer steps into inject mode 0, which hands every caller the head pose and so ties aim to the head. Only `[Dev] InjectMode=0` selects that mode now.
 
 ### Removed
 
