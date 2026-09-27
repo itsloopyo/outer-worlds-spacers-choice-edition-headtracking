@@ -77,11 +77,11 @@ namespace tow_ht
         // with inject::kCallerSlots would read past the end.
         inject::CallerRvas kKnownCallerRvas;
 
-        // Default inject mode at startup. 0 = all callers (diagnostic only),
-        // 1..16 = inject only for kKnownCallerRvas[mode-1] (the render-path
-        // caller / FMinimalViewInfo builder), 17 = none. Page Down / Page Up
-        // cycle this live so the render caller can be re-confirmed in game
-        // after a patch without a rebuild.
+        // Default inject mode at startup. 1..16 = inject only for
+        // kKnownCallerRvas[mode-1] (the render-path caller / FMinimalViewInfo
+        // builder), 17 = none, 0 = inject for slot 1 as mode 1 does and log the
+        // caller summary. [Dev] InjectModeKey cycles this live so the render
+        // caller can be re-confirmed in game after a patch without a rebuild.
         int kDefaultInjectMode;
 
         // APlayerController::bShowMouseCursor bitfield, for the InGameplay

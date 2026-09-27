@@ -25,6 +25,8 @@
 // shipped off pending verification and now takes the mod's default, on
 // (follows_default). That switch is also the one default the conversion moved,
 // from off to the schema's built-in on, so the no-file input differs there too.
+// A [Diag] InjectMode of 0 handed every caller the head pose, which coupled the
+// aim to the head, so it imports as -1, the build's own choice (coupled_aim).
 //
 // A legacy yaw key on a Ctrl, Shift or Alt key alone imports as unbound and
 // keeps its Ctrl+Shift+H chord (normalisation N3).
@@ -99,9 +101,10 @@ namespace testing = cameraunlock::config::testing;
 // src/logging.h, src/inject_mode.h and src/legacy_config/config_sanitize.h,
 // which is v0.1.0's src/config_sanitize.h moved. So the readers differ only
 // where the mod's own reader changed. The frozen reader is pinned at the commit
-// that froze it. The map in legacy_import.cpp is pinned too and moved once, by
+// that froze it. The map in legacy_import.cpp is pinned too and moved twice, by
 // the owner's rule of 2026-09-26 that a setting the player never changed
-// follows Defaults.ini, with N3.
+// follows Defaults.ini, with N3, and by the ruling of the same day that aim is
+// always decoupled, which drops a [Diag] InjectMode of 0.
 
 struct Pinned {
     const char* path;
@@ -140,7 +143,7 @@ constexpr Pinned kPinned[] = {
     {"src/legacy_config/config_sanitize.h", "d579938044e5b2d55864b70017f29a72aedd32100f94cc91fce33a254161c06c"},
     {"src/legacy_config/legacy_config.h", "674c3f6b14bf663246347d8ea00f8b52d0b84b36d510eeccb70937c0fde9d3ed"},
     {"src/legacy_config/legacy_import.h", "efcb39399acb55fd08ee92b2f8bb8ee52525355ccec89f5ac0bab5d1119155d0"},
-    {"src/legacy_config/legacy_import.cpp", "136afefa03650aad844eadabac01877c9304e9997a612223cf8c4061e5a0595d"},
+    {"src/legacy_config/legacy_import.cpp", "891515a32bc33a0c1346b7d4b5a931d554e323f93d796e9ecec2e3ee5ccc2316"},
     {"src/legacy_config/legacy_config.cpp", "6841b38f9f69c9113827ca291519c9319ea7ffd06db4a46e613069e52cbf0cb8"},
 };
 
@@ -790,6 +793,11 @@ std::vector<Input> Inputs() {
         bytes.replace(at, shipped.size(), std::string("YawModeKey=") + code);
         inputs.push_back({std::string("yaw key ") + code, true, std::move(bytes)});
     }
+    // coupled_aim: mode 0 is dropped, any other mode is carried.
+    for (const char* mode : {"0", "5"}) {
+        inputs.push_back({std::string("inject mode ") + mode, true,
+                          FirstRunFile() + "[Diag]\r\nInjectMode=" + mode + "\r\n"});
+    }
     for (testing::IniMutation& m : testing::GenerateIniMutations(FirstRunFile(), CorpusReads(), CorpusKeys())) {
         inputs.push_back({"corpus: " + m.name, true, std::move(m.bytes)});
     }
@@ -894,6 +902,10 @@ Observed ExpectedMigration(const tow_ht::legacy::Config& read, std::vector<cfg::
     if (!o.collision_enabled) {
         drops.push_back({cfg::DropRule::FollowsDefault, "Collision", "Enabled", "false"});
         o.collision_enabled = true;
+    }
+    if (read.inject_mode == 0) {
+        drops.push_back({cfg::DropRule::CoupledAim, "Diag", "InjectMode", "0"});
+        o.inject_mode = -1;
     }
     // N3: a yaw key on Ctrl, Shift or Alt alone is unbound, and the chord stays.
     const int yaw = read.yaw_mode_key;
@@ -1098,6 +1110,7 @@ void ImportAgainstMigration(const std::vector<Input>& inputs, std::set<std::stri
     int compared = 0;
     int touched = 0;
     int mode_touched = 0;
+    int coupled = 0;
     for (const Input& input : inputs) {
         const char* name = input.name.c_str();
 
@@ -1127,6 +1140,7 @@ void ImportAgainstMigration(const std::vector<Input>& inputs, std::set<std::stri
         const bool drops_ok = DropsAreTheApprovedOnes(read, approved, imported);
         if (!drops_ok) std::printf("  comparison 2, %s: dropped values\n", name);
         CHECK_MSG(drops_ok, "comparison 2: the only drops are the approved changes");
+        if (read.inject_mode == 0) ++coupled;
 
         const std::set<Concept> follows(imported.follows_defaults_ini.begin(), imported.follows_defaults_ini.end());
         CHECK_MSG(follows.size() == imported.follows_defaults_ini.size(), "follows_defaults_ini names each row once");
@@ -1170,6 +1184,8 @@ void ImportAgainstMigration(const std::vector<Input>& inputs, std::set<std::stri
     std::printf("%d inputs changed a row from the shipped default, %d of them the tracking mode\n", touched,
                 mode_touched);
     CHECK_MSG(touched > 0 && mode_touched > 0, "the corpus changes rows, the tracking mode among them");
+    std::printf("%d inputs held [Diag] InjectMode=0, dropped as CoupledAim\n", coupled);
+    CHECK_MSG(coupled > 0, "the inputs hold the inject mode that coupled the aim");
 }
 
 void WriteForLint(const std::set<std::string>& distinct) {

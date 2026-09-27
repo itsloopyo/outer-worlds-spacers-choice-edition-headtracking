@@ -19,6 +19,7 @@
   - A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
   - Reticle settings, and a key that toggled the reticle.
   - The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+  - `[Diag] InjectMode=0`, which handed every one of the game's camera calls the head pose and so tied the aim to the head. Aim is always decoupled now, so your aim stays with the mouse or controller while your head moves the view, and `InjectMode` under `[Dev]` is written as `-1`, which keeps this build's choice.
   - A `YawModeKey` set to Ctrl, Shift or Alt on its own. That key goes down before the key of any chord made with it, so the key is left unbound and the yaw mode keeps its `Ctrl+Shift+H` chord.
 - An older version of the mod reads `HeadTracking.ini` and never reads `CameraUnlock.ini`, so a setting you change after updating is not in `HeadTracking.ini`.
 - Deleting only `CameraUnlock.ini` makes the next start read `HeadTracking.ini` again. To go back to the defaults, replace everything in `CameraUnlock.ini` with the defaults the README shows. Every setting they set to `default` then follows `Defaults.ini`.
@@ -27,7 +28,7 @@
 - The lean collision sweep is on by default. Its switch, `[Collision] Enabled`, is now `CollisionEnabled` under `[Position]`, and its built-in value is `true`. It was the feature earlier versions shipped switched off while untested, so the import does not carry it: the sweep runs unless `CollisionEnabled` is `false` in `CameraUnlock.ini`, or is `default` there and `false` in `Defaults.ini`.
 - `uninstall.cmd` leaves `CameraUnlock.ini` and `HeadTracking.ini` in place, so your settings survive a reinstall. It used to delete `HeadTracking.ini`.
 - Head tracking stays on while you aim down sights, and the lean eases out while the sights are up. The ADS mode cycle is gone: `[Aim] AdsMode` is no longer read, and `Insert` and `Ctrl+Shift+U` do nothing (c7a9c9b).
-- The diagnostic `Ctrl+Shift+J` no longer steps into inject mode 0, which hands every caller the head pose and so ties aim to the head. Only `[Dev] InjectMode=0` selects that mode now.
+- Inject mode 0, which `[Dev] InjectMode=0` or the diagnostic `Ctrl+Shift+J` selects, no longer hands every one of the game's camera calls the head pose, which tied the aim to the head. It gives the head pose to the render call alone, as mode 1 does, and still writes a summary of every camera call to `HeadTracking.log`. No inject mode ties the aim to the head.
 
 ### Removed
 

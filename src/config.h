@@ -82,7 +82,8 @@ struct Config {
 
     // Overrides the build profile's kDefaultInjectMode when >= 0. Mode 0 logs a
     // summary of every distinct GetPlayerViewPoint return address, which is how
-    // the render-path caller is (re-)identified after a patch.
+    // the render-path caller is (re-)identified after a patch, and injects for
+    // the first caller slot only, as mode 1 does.
     int inject_mode = -1;
     // Cycles the inject mode in game, for the same job.
     std::string inject_mode_key = "Ctrl+Shift+J";

@@ -28,8 +28,7 @@ namespace tow_ht::view_hook::diag {
 
 // Count one GetPlayerViewPoint return address and, on an interval, print the
 // table of every distinct one seen. This is how the render-path caller is
-// (re-)identified after a patch, so it is only driven in the all-callers
-// diagnostic mode.
+// (re-)identified after a patch, so it is only driven in inject mode 0.
 void CountCaller(std::uintptr_t retRva, std::uint64_t call);
 
 // Say so, once, if the hook is ever entered from a second thread.

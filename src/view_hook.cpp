@@ -90,20 +90,29 @@ float ScaleForZoom(float angleDeg, float factor) {
     return cameraunlock::camera::ScaleAngleForZoom(angleDeg, factor);
 }
 
+// Mode 0 counts every caller for the caller summary and gives the pose to the
+// render caller alone, as mode 1 does. inject_mode.h still names it kAllCallers,
+// from when it handed every caller the pose and coupled the aim to the head; that
+// header is pinned with the legacy import, which has to read v0.1.0's range.
+constexpr int kCallerSummary = inject::kAllCallers;
+
+// The caller slot a mode gives the pose to, 1-based like the modes themselves.
+int InjectedSlot(int mode) { return mode == kCallerSummary ? inject::kFirstCaller : mode; }
+
 // True when no caller at all gets the pose in this mode: kNone, and every mode
 // whose caller slot this profile left underived.
 bool NothingInjects(int mode) {
-    if (mode == inject::kAllCallers) return false;
-    if (mode < inject::kFirstCaller || mode > static_cast<int>(inject::kCallerSlots))
+    const int slot = InjectedSlot(mode);
+    if (slot < inject::kFirstCaller || slot > static_cast<int>(inject::kCallerSlots))
         return true;
-    return Offsets().kKnownCallerRvas[mode - 1] == 0;
+    return Offsets().kKnownCallerRvas[slot - 1] == 0;
 }
 
 bool ShouldInject(std::uintptr_t retRva, int mode) {
-    if (mode == inject::kAllCallers) return true;
-    if (mode < inject::kFirstCaller || mode > static_cast<int>(inject::kCallerSlots))
+    const int slot = InjectedSlot(mode);
+    if (slot < inject::kFirstCaller || slot > static_cast<int>(inject::kCallerSlots))
         return false;
-    const auto rva = Offsets().kKnownCallerRvas[mode - 1];
+    const auto rva = Offsets().kKnownCallerRvas[slot - 1];
     return rva != 0 && retRva == rva;
 }
 
@@ -375,7 +384,7 @@ void __fastcall Hook(void* self, UeVector* outLocation, UeRotator* outRotation) 
     diag::NoteHookThread();
     frame.Call = g_calls.fetch_add(1, std::memory_order_relaxed) + 1;
     const int mode = g_injectMode.load(std::memory_order_relaxed);
-    if (mode == inject::kAllCallers) diag::CountCaller(frame.RetRva, frame.Call);
+    if (mode == kCallerSummary) diag::CountCaller(frame.RetRva, frame.Call);
 
     // Decoupling: every caller but the render/projection one keeps the clean
     // mouse/pad view, and that is what holds the shot on the aim rather than on
@@ -393,7 +402,7 @@ void __fastcall Hook(void* self, UeVector* outLocation, UeRotator* outRotation) 
         // Keyed on whether ANY caller injects, not on kNone alone: this profile
         // fills six caller slots of sixteen, ShouldInject rejects every caller
         // for a mode whose slot RVA is 0, and Ctrl+Shift+J walks the whole
-        // eighteen-position cycle - so modes 7 to 16 land here too. Keyed on the
+        // cycle of all eighteen modes - so modes 7 to 16 land here too. Keyed on the
         // render caller so it runs once per entry to that one call site rather
         // than once per caller; that site is itself entered two or three times a
         // frame, being the funnel for CalcSceneView and GetProjectionData both.

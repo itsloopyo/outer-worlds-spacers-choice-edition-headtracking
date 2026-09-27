@@ -324,7 +324,7 @@ void TheGameKeysAreCarried() {
     Scratch s("local");
     WriteFileBytes(s.legacy(), "[General]\r\nCenterWindow=0\r\n[Aim]\r\nTraceChannel=2\r\nMaxDistance=5000\r\n"
                                "[Dev]\r\nWidgetDump=1\r\nWidgetDumpOuter=HUD_BP_C\r\nPoseLog=1\r\n"
-                               "[Diag]\r\nInjectMode=0\r\n");
+                               "[Diag]\r\nInjectMode=5\r\n");
     const tow_ht::Config c = s.Load();
     CHECK(!c.center_window);
     CHECK(c.aim_trace_channel == 2);
@@ -332,11 +332,22 @@ void TheGameKeysAreCarried() {
     CHECK(c.widget_dump);
     CHECK(c.widget_dump_outer == "HUD_BP_C");
     CHECK(c.pose_log);
-    CHECK(c.inject_mode == 0);
+    CHECK(c.inject_mode == 5);
     const std::string migrated = ReadFileBytes(s.ini());
     CHECK(Holds(migrated, "CenterWindow=false"));
     CHECK(Holds(migrated, "AimTraceChannel=2"));
-    CHECK(Holds(migrated, "InjectMode=0"));
+    CHECK(Holds(migrated, "InjectMode=5"));
+}
+
+// Inject mode 0 handed every caller the head pose, which coupled the aim to the
+// head. Aim is always decoupled now, so it is not carried: the migrated file
+// keeps the build's own choice.
+void TheCoupledInjectModeIsNotCarried() {
+    Scratch s("coupled");
+    WriteFileBytes(s.legacy(), "[Diag]\r\nInjectMode=0\r\n");
+    const tow_ht::Config c = s.Load();
+    CHECK(c.inject_mode == -1);
+    CHECK(Holds(ReadFileBytes(s.ini()), "InjectMode=-1"));
 }
 
 }  // namespace
@@ -361,6 +372,7 @@ int main(int argc, char** argv) {
     TheOldReticleSettingsAreNotCarried();
     AnOldCollisionSwitchFollowsTheDefault();
     TheGameKeysAreCarried();
+    TheCoupledInjectModeIsNotCarried();
 
     return tow_test::Report();
 }

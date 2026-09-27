@@ -14,6 +14,7 @@
 
 #include <windows.h>
 
+#include "inject_mode.h"
 #include "legacy_config.h"
 
 #include "cameraunlock/input/key_bindings.h"
@@ -90,7 +91,15 @@ cfg::ImportResult Run(const cfg::LegacyInput& input, tow_ht::Config& out) {
     out.widget_dump = read.widget_dump;
     out.widget_dump_outer = read.widget_dump_outer;
     out.pose_log = read.pose_log;
-    out.inject_mode = read.inject_mode;
+    // Mode 0 handed every caller the head pose, which coupled the aim to the head.
+    // Aim is always decoupled now (approved change coupled_aim), so it imports as
+    // the build's own choice.
+    if (read.inject_mode == inject::kAllCallers) {
+        out.inject_mode = -1;
+        dropped.push_back({cfg::DropRule::CoupledAim, "Diag", "InjectMode", "0"});
+    } else {
+        out.inject_mode = read.inject_mode;
+    }
 
     // End, Page Up, the Ctrl+Shift chords and the Ctrl+Shift+J inject chord were
     // bound in code; only the yaw key was in the file, and the reader keeps it

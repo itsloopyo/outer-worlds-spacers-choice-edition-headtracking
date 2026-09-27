@@ -55,10 +55,7 @@ void ToggleYawMode() {
 
 // Dev: re-confirm the render caller in game after a patch without a rebuild.
 void CycleInject() {
-    // Mode 0 couples aim to the head, so a stray press of the chord must never reach
-    // it: only [Dev] InjectMode selects it.
-    const int cur = view_hook::InjectMode();
-    const int m = cur >= inject::kNone ? inject::kFirstCaller : cur + 1;
+    const int m = (view_hook::InjectMode() + 1) % inject::kModeCount;
     view_hook::SetInjectMode(m);
     Log::Line("hotkey: inject mode -> %d", m);
 }

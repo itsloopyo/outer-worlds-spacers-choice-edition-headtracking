@@ -158,11 +158,12 @@ described under Centering above.
 `Ctrl+Shift+J` cycles a diagnostic that changes which of the game's camera calls
 the head pose is injected into. It exists to re-identify the render path after a
 game patch and there is no reason to press it in normal play. The cycle has 18
-positions, so pressing it once does not return by pressing it again, and one of
-the eighteen hands every one of the game's camera calls the head pose, which
-turns the aim decoupling off. Restarting the game returns to the setting in
-`CameraUnlock.ini`, and `InjectModeKey` under `[Dev]` rebinds or removes the
-key.
+positions, so pressing it once does not return by pressing it again. Each
+position gives the head pose to one camera call at most and every other call
+keeps the mouse or controller view, so the aim stays decoupled in all of them.
+Position 0 also writes a summary of every camera call to `HeadTracking.log`.
+Restarting the game returns to the setting in `CameraUnlock.ini`, and
+`InjectModeKey` under `[Dev]` rebinds or removes the key.
 
 `Page Up` / `Ctrl+Shift+G` cycles tracking mode:
 
@@ -304,11 +305,11 @@ WidgetDumpOuter=
 PoseLog=false
 ; Which of the game's view point callers is given the head pose, in place of the one
 ; this build picks. -1 keeps the build's choice. The others are for finding the render
-; path after a game patch, and 0 hands every caller the head pose, which turns aim
-; decoupling off.
+; path after a game patch: 0 gives the head pose to the render caller, as 1 does, and
+; writes a summary of every caller to HeadTracking.log.
 InjectMode=-1
-; Steps through the inject modes in game other than 0, for the same job. The next start
-; goes back to InjectMode.
+; Steps through the inject modes in game, for the same job. The next start goes back
+; to InjectMode.
 InjectModeKey=Ctrl+Shift+J
 ```
 <!-- /cameraunlock:config -->

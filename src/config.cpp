@@ -95,12 +95,12 @@ cfg::ConfigTable<Config> Table() {
         .Local("Dev", "InjectMode", &Config::inject_mode, cfg::IntCodec<int>(),
                "Which of the game's view point callers is given the head pose, in place of the one\n"
                "this build picks. -1 keeps the build's choice. The others are for finding the render\n"
-               "path after a game patch, and 0 hands every caller the head pose, which turns aim\n"
-               "decoupling off.")
+               "path after a game patch: 0 gives the head pose to the render caller, as 1 does, and\n"
+               "writes a summary of every caller to HeadTracking.log.")
         .Range(-1, inject::kModeCount - 1)
         .Local("Dev", "InjectModeKey", &Config::inject_mode_key, cfg::HotkeyCodec(),
-               "Steps through the inject modes in game other than 0, for the same job. The next start\n"
-               "goes back to InjectMode.");
+               "Steps through the inject modes in game, for the same job. The next start goes back\n"
+               "to InjectMode.");
     return table;
 }
 
