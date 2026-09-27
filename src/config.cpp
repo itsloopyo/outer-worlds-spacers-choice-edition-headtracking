@@ -99,8 +99,8 @@ cfg::ConfigTable<Config> Table() {
                "decoupling off.")
         .Range(-1, inject::kModeCount - 1)
         .Local("Dev", "InjectModeKey", &Config::inject_mode_key, cfg::HotkeyCodec(),
-               "Steps through the inject modes in game, for the same job. The next start goes back\n"
-               "to InjectMode.");
+               "Steps through the inject modes in game other than 0, for the same job. The next start\n"
+               "goes back to InjectMode.");
     return table;
 }
 
