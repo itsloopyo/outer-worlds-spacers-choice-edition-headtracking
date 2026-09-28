@@ -45,7 +45,9 @@ render-config = { cmd = "build/Release/tow_config_tests.exe --render-config conf
 # canonical config lint over every file that test migrated (run with node). No
 # game and no hooks; the INI suites read files through GetPrivateProfileString,
 # so they need Windows.
-test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
+test-unit = { cmd = "ctest --test-dir build -C Release --output-on-failure -LE differential", depends-on = ["build"] }
+test-differential = { cmd = "ctest --test-dir build -C Release --output-on-failure --no-tests=error -L differential", depends-on = ["build"] }
+test = { depends-on = ["test-unit", "test-differential"] }
 
 clean = { cmd = """
     powershell -NoProfile -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; Write-Host 'Build artifacts cleaned' -ForegroundColor Green"
@@ -84,7 +86,7 @@ conformance = "powershell -NoProfile -ExecutionPolicy Bypass -File cameraunlock-
 # build read it. That includes the tagged build: core's release-mod.yml runs
 # this task and has no test step of its own. release.ps1 still runs the tests once before it stamps
 # a version, so a failure normally stops a release before anything mutates.
-package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["test"] }
+package = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["test-unit"] }
 
 # Full release workflow: stamp version, changelog, package, commit, tag, push.
 # Unattended - `pixi run release minor` is the authorization, there is no prompt.

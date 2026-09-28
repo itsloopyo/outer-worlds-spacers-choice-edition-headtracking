@@ -232,6 +232,7 @@ if(TOW_BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/tests/config_differential/lint-migrated.mjs
         $<TARGET_FILE_DIR:tow_config_differential_tests>/migrated)
     set_tests_properties(tow_config_lint PROPERTIES DEPENDS tow_config_differential_tests)
+    set_tests_properties(tow_config_differential_tests tow_config_lint PROPERTIES LABELS differential)
 
     # The width check both Kismet traces run before writing a parameter frame
     # into a stack buffer at offsets read out of the engine's reflection data.

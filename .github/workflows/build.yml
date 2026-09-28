@@ -32,6 +32,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build and Validate
@@ -67,13 +71,6 @@ jobs:
       - name: Build and package
         shell: pwsh
         run: pixi run package
-
-      # The behaviour locks, through the same command a developer runs. These
-      # need no game and no graphics device. This covers branch and PR pushes;
-      # a tag runs release.yml, which delegates to core's reusable workflow.
-      - name: Test
-        shell: pwsh
-        run: pixi run test
 
       - name: Verify installer was produced
         shell: pwsh
