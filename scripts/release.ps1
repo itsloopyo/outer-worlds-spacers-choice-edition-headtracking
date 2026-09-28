@@ -88,17 +88,6 @@ function Update-VersionInFile {
     Set-TextFileNoBom -Path $full -Text $updated
 }
 
-# Mirrors New-ChangelogFromCommits' insertion so a -Force maintenance entry
-# lands in the same place with the same shape.
-function Add-MaintenanceChangelogEntry {
-    param([string]$Path, [string]$NewVersion)
-    $date = Get-Date -Format 'yyyy-MM-dd'
-    $entry = "## [$NewVersion] - $date`n`n### Changed`n`n- Maintenance release (no user-facing changes).`n`n"
-    $changelog = [System.IO.File]::ReadAllText((Join-Path $root $Path))
-    $changelog = $changelog -replace '(?s)(# Changelog.*?\n\n)', "`$1$entry"
-    Set-TextFileNoBom -Path (Join-Path $root $Path) -Text ($changelog.TrimEnd() + "`n")
-}
-
 Push-Location $root
 try {
     # CMakeLists.txt is canonical: release.yml re-reads it through the same
@@ -129,15 +118,13 @@ try {
     # touched - a failure here leaves a clean tree instead of stranding a
     # half-applied bump with no tag.
     try {
-        New-ChangelogFromCommits -ChangelogPath 'CHANGELOG.md' -Version $new | Out-Null
+        New-ChangelogFromCommits -ChangelogPath 'CHANGELOG.md' -Version $new -Maintenance:$Force | Out-Null
     } catch {
+        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
         if (-not $Force) {
-            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
             Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
-            exit 1
         }
-        Write-Host 'No user-facing commits since last tag - writing maintenance entry (-Force).' -ForegroundColor Yellow
-        Add-MaintenanceChangelogEntry -Path 'CHANGELOG.md' -NewVersion $new
+        exit 1
     }
 
     # Stamp the new version everywhere it lives. CMakeLists.txt is canonical;
