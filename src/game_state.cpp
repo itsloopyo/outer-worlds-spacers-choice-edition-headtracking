@@ -34,17 +34,20 @@ constexpr std::uint64_t kGateFlapMs = 2000;
 // How long one read of the gate stands for. AGENTS.md's ~0.1s.
 constexpr std::uint64_t kGateHoldMs = 100;
 
-}  // namespace
-
-Verdict Evaluate(std::uintptr_t controller) {
-    // Held for 100ms. The injected caller is the funnel for CalcSceneView and
-    // GetProjectionData both, so it is entered two or three times per rendered
-    // frame and this would otherwise read the gate 300-400 times a second.
-    // Menus, loading and pauses last orders of magnitude longer than the hold,
-    // so nothing the gate exists to catch is missed.
-    // Keyed on the controller as well as the clock: a map transition rebuilds
-    // the controller, and a verdict read off the old one says nothing about the
-    // new one however recently it was taken.
+// The cursor flag, held for 100ms. The injected caller is the funnel for
+// CalcSceneView and GetProjectionData both, so it is entered two or three times
+// per rendered frame and this would otherwise read the gate 300-400 times a
+// second. Menus, loading and pauses last orders of magnitude longer than the
+// hold, so nothing the gate exists to catch is missed.
+//
+// Keyed on the controller as well as the clock: a map transition rebuilds the
+// controller, and a verdict read off the old one says nothing about the new one
+// however recently it was taken.
+//
+// A profile without the cursor offset never activates - build_registry treats
+// it as incomplete and the mod stays dormant - so there is no underived-gate
+// case to answer here, and no frame on which tracking runs ungated.
+Verdict ReadCursorGate(std::uintptr_t controller) {
     static std::uint64_t s_stamp = 0;
     static std::uintptr_t s_controller = 0;
     static Verdict s_cached;
@@ -53,30 +56,31 @@ Verdict Evaluate(std::uintptr_t controller) {
     if (s_have && controller == s_controller && now - s_stamp < kGateHoldMs)
         return s_cached;
 
-    // A profile without this offset never activates - build_registry treats it
-    // as incomplete and the mod stays dormant - so there is no underived-gate
-    // case to answer here, and no frame on which tracking runs ungated.
     Verdict v;
     std::uint32_t bits = 0;
-    if (!ue::SafeReadU32(controller + Offsets().kShowMouseCursorOffset, bits)) {
-        // A controller that will not read is not a controller. Fail closed:
-        // holding the last frame's view is the safe answer, and an unreadable
-        // frame must never be the one that turns tracking on.
-        v.InGameplay = false;
-        v.GateKnown = false;
-        s_stamp = now;
-        s_controller = controller;
-        s_cached = v;
-        s_have = true;
-        return v;
+    if (ue::SafeReadU32(controller + Offsets().kShowMouseCursorOffset, bits)) {
+        v.GateKnown = true;
+        v.InGameplay = (bits & Offsets().kShowMouseCursorMask) == 0;
     }
-    v.GateKnown = true;
-    v.InGameplay = (bits & Offsets().kShowMouseCursorMask) == 0;
-    v.InConversation = !v.InGameplay && conversation_state::Active();
+    // Otherwise a controller that will not read is not a controller. Fail
+    // closed: holding the last frame's view is the safe answer, and an
+    // unreadable frame must never be the one that turns tracking on.
     s_stamp = now;
     s_controller = controller;
     s_cached = v;
     s_have = true;
+    return v;
+}
+
+}  // namespace
+
+// The conversation test is asked on every call while the cursor is up rather
+// than held with the cursor flag: once the widget is held it is a handful of
+// guarded reads, and until then the calls are what drive conversation_state's
+// paced search of the object table.
+Verdict Evaluate(std::uintptr_t controller) {
+    Verdict v = ReadCursorGate(controller);
+    v.InConversation = v.GateKnown && !v.InGameplay && conversation_state::Active();
     return v;
 }
 

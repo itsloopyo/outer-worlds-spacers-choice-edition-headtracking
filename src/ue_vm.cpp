@@ -65,26 +65,34 @@ bool ResolveRetry::Due() {
 }
 
 bool IsRegistered(std::uintptr_t obj) {
-    const auto& g = Offsets().UObjectGlobals;
-    if (g.kChunkNumElems == 0 || g.kFUObjectItemSize == 0) return false;
     // UObjectBase packs InternalIndex immediately before ClassPrivate.
     std::uint32_t index = 0;
-    if (!ue::SafeReadU32(obj + g.kClassPrivate - 4, index)) return false;
+    if (!ue::SafeReadU32(obj + Offsets().UObjectGlobals.kClassPrivate - 4, index)) return false;
+    return index < ObjectCount() && ObjectAt(index) == obj;
+}
 
-    const std::uintptr_t objArr = ue::ModuleBase() + g.kObjObjects;
-    std::uintptr_t chunks = 0;
+std::uint32_t ObjectCount() {
+    const auto& g = Offsets().UObjectGlobals;
+    // Both are divisors in ObjectAt, so a profile missing either has no array.
+    if (g.kChunkNumElems == 0 || g.kFUObjectItemSize == 0) return 0;
     std::uint32_t num = 0;
-    if (!ue::SafeReadPtr(objArr, chunks) || !chunks) return false;
-    if (!ue::SafeReadU32(objArr + g.kObjObjects_Num, num) || index >= num) return false;
+    if (!ue::SafeReadU32(ue::ModuleBase() + g.kObjObjects + g.kObjObjects_Num, num)) return 0;
+    return num;
+}
 
+std::uintptr_t ObjectAt(std::uint32_t index) {
+    const auto& g = Offsets().UObjectGlobals;
+    std::uintptr_t chunks = 0;
+    if (!ue::SafeReadPtr(ue::ModuleBase() + g.kObjObjects, chunks) || !chunks) return 0;
     std::uintptr_t chunk = 0;
     if (!ue::SafeReadPtr(chunks + (static_cast<std::uintptr_t>(index / g.kChunkNumElems) * 8),
                          chunk) || !chunk)
-        return false;
-    std::uintptr_t registered = 0;
-    return ue::SafeReadPtr(chunk + static_cast<std::uintptr_t>(index % g.kChunkNumElems)
-                               * g.kFUObjectItemSize, registered)
-        && registered == obj;
+        return 0;
+    std::uintptr_t obj = 0;
+    if (!ue::SafeReadPtr(chunk + static_cast<std::uintptr_t>(index % g.kChunkNumElems)
+                             * g.kFUObjectItemSize, obj))
+        return 0;
+    return obj;
 }
 
 std::string OuterChain(std::uintptr_t obj, int depth, const char* separator) {

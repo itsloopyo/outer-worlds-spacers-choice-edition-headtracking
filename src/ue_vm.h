@@ -34,6 +34,13 @@ bool Dispatch(void* self, void* function, void* params);
 // object's own InternalIndex points back at it only while it is registered.
 bool IsRegistered(std::uintptr_t obj);
 
+// GUObjectArray's element count, or 0 when the array will not read.
+std::uint32_t ObjectCount();
+
+// The object registered in slot `index`, or 0 for a free slot or one that will
+// not read. `index` must be below ObjectCount().
+std::uintptr_t ObjectAt(std::uint32_t index);
+
 // The chain of outer names above `obj`, at most `depth` links, each one
 // prefixed with `separator`. Stops early at the first outer that will not read.
 std::string OuterChain(std::uintptr_t obj, int depth, const char* separator);

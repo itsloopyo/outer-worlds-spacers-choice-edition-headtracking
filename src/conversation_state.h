@@ -14,10 +14,10 @@
 // set it; pausing from inside a dialogue leaves it set.
 namespace tow_ht::conversation_state {
 
-// Whether a conversation is live right now. Game thread only. Walks the object
-// table to find the widget, at most every kWalkIntervalMs and only while no live
-// widget answering yes is held, so a dialogue costs one guarded pointer read per
-// call once it has been found.
+// Whether a conversation is live right now. Game thread only. While no live
+// widget answering yes is held, a call may search one slice of the object table
+// for it, so the search is spread over many calls rather than paid in one. Once
+// the widget has been found a call is a liveness test and one pointer read.
 bool Active();
 
 }  // namespace tow_ht::conversation_state

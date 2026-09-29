@@ -27,11 +27,17 @@ namespace ue = ::cameraunlock::unreal;
 // looked up once at startup.
 constexpr const char* kWidgetClassName = "ConversationWidget_BP_C";
 
-// How often the object table is walked while the cursor is up and no widget
-// answering yes is held. A walk is a pass over ~90k objects on the game thread;
-// it only runs in a menu or in the first moments of a dialogue, and this bounds
-// how late tracking starts after a conversation opens.
-constexpr std::uint64_t kWalkIntervalMs = 250;
+// The object table is searched a slice at a time while the cursor is up and no
+// widget answering yes is held. One pass over the whole table (~90k objects)
+// measured 5.2ms on the game thread, and run in one go that is a hitch four
+// times a second for as long as the player sits in the inventory or the pause
+// menu. A slice is under a fifth of the table. Slices are at least
+// kSliceSpacingMs apart, so the hook's several entries inside one frame do not
+// stack them, and a pass starts at most every kPassIntervalMs, which bounds how
+// late tracking starts after a conversation opens.
+constexpr std::uint32_t kSliceObjects = 16384;
+constexpr std::uint64_t kSliceSpacingMs = 8;
+constexpr std::uint64_t kPassIntervalMs = 250;
 
 // The class's FName comparison index, learned by the first walk that meets it.
 // Until then every distinct class name is resolved to a string once and the
@@ -46,7 +52,11 @@ bool g_unavailable = false;
 
 std::uintptr_t g_held = 0;
 std::uintptr_t g_heldCls = 0;
-std::uint64_t g_lastWalkMs = 0;
+
+// The next GUObjectArray slot of the pass in progress; 0 when none is.
+std::uint32_t g_cursor = 0;
+std::uint64_t g_passStartMs = 0;
+std::uint64_t g_lastSliceMs = 0;
 
 bool IsWidgetClass(std::uintptr_t cls) {
     std::uint32_t id = 0;
@@ -94,19 +104,29 @@ bool HeldIsLive() {
         && cls == g_heldCls && ue_vm::IsRegistered(g_held);
 }
 
-std::uintptr_t Walk() {
-    const std::size_t classOff = Offsets().UObjectGlobals.kClassPrivate;
+// `obj` when it is the dialogue widget taking the player's responses, else 0.
+std::uintptr_t Match(std::uintptr_t obj) {
+    std::uintptr_t cls = 0;
+    if (!ue::SafeReadPtr(obj + Offsets().UObjectGlobals.kClassPrivate, cls) || !cls) return 0;
+    if (!IsWidgetClass(cls) || !ResolveInputOffset(cls) || !TakingInput(obj)) return 0;
+    g_heldCls = cls;
+    return obj;
+}
+
+// The next slice of the pass in progress. The pass ends, and the cursor goes
+// back to 0, at the end of the table, on a find, or when ResolveInputOffset has
+// written the feature off.
+std::uintptr_t WalkSlice() {
+    const std::uint32_t count = ue_vm::ObjectCount();
+    std::uint32_t i = g_cursor;
+    const std::uint32_t end =
+        (i < count && count - i > kSliceObjects) ? i + kSliceObjects : count;
     std::uintptr_t found = 0;
-    ue::ForEachUObject([&](std::uintptr_t obj) -> bool {
-        std::uintptr_t cls = 0;
-        if (!ue::SafeReadPtr(obj + classOff, cls) || !cls) return false;
-        if (!IsWidgetClass(cls)) return false;
-        if (!ResolveInputOffset(cls)) return true;
-        if (!TakingInput(obj)) return false;
-        found = obj;
-        g_heldCls = cls;
-        return true;
-    });
+    for (; i < end && !found && !g_unavailable; ++i) {
+        const std::uintptr_t obj = ue_vm::ObjectAt(i);
+        if (obj) found = Match(obj);
+    }
+    g_cursor = (found || g_unavailable || i >= count) ? 0 : i;
     return found;
 }
 
@@ -124,19 +144,25 @@ bool Active() {
     }
 
     const std::uint64_t now = GetTickCount64();
-    if (g_lastWalkMs != 0 && now - g_lastWalkMs < kWalkIntervalMs) return false;
-    g_lastWalkMs = now;
+    if (g_cursor == 0) {
+        if (g_passStartMs != 0 && now - g_passStartMs < kPassIntervalMs) return false;
+        g_passStartMs = now;
+    } else if (now - g_lastSliceMs < kSliceSpacingMs) {
+        return false;
+    }
+    g_lastSliceMs = now;
 
     LARGE_INTEGER freq{}, t0{}, t1{};
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&t0);
-    g_held = Walk();
+    g_held = WalkSlice();
     QueryPerformanceCounter(&t1);
 
     static bool s_timed = false;
     if (!s_timed) {
         s_timed = true;
-        Log::Line("conversation: object-table walk took %.1fms",
+        Log::Line("conversation: an object-table slice of up to %u objects took %.2fms",
+            kSliceObjects,
             freq.QuadPart ? static_cast<double>(t1.QuadPart - t0.QuadPart) * 1000.0
                                 / static_cast<double>(freq.QuadPart)
                           : 0.0);
