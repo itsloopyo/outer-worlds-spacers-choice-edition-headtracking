@@ -34,4 +34,10 @@ bool WorldSpaceYaw();
 void SetInjectMode(int mode);
 int  InjectMode();
 
+// The tracking mode the hotkey asked for. The session takes it on the game
+// thread at the next injected frame rather than on the hotkey thread, because
+// SetMode resets the position interpolator and processor that Update() is
+// reading there.
+void RequestTrackingMode(cameraunlock::TrackingMode mode);
+
 }  // namespace tow_ht::view_hook

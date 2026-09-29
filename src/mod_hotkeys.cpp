@@ -35,10 +35,14 @@ void ToggleTracking() {
     Log::Line("hotkey: tracking %s", nv ? "ON" : "OFF");
 }
 
-// Three-state, not a binary toggle: full -> rotation only -> position only.
+// Three-state, not a binary toggle: full -> rotation only -> position only, the
+// order of Session::CycleMode. Stepped from the mode the game thread last
+// applied, so two presses inside one frame move one step, not two.
 void CycleTrackingMode() {
     if (!g_session) return;
-    const TrackingMode next = g_session->CycleMode();
+    const TrackingMode next =
+        static_cast<TrackingMode>((static_cast<int>(g_session->GetMode()) + 1) % 3);
+    view_hook::RequestTrackingMode(next);
     Log::Line("hotkey: tracking mode -> %s",
         next == TrackingMode::RotationAndPosition ? "rotation + position"
         : next == TrackingMode::RotationOnly      ? "rotation only"

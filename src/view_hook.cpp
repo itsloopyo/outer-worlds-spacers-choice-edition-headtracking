@@ -57,6 +57,7 @@ std::atomic<bool> g_trackingEnabled{true};
 // local yaw (quaternion post-multiply, which leans on pitched turns).
 std::atomic<bool> g_worldSpaceYaw{true};
 std::atomic<int>  g_injectMode{inject::kFirstCaller};
+std::atomic<int>  g_requestedMode{static_cast<int>(cameraunlock::TrackingMode::RotationAndPosition)};
 
 // Ticked by the injected caller, which is NOT the same thing as once per
 // rendered frame: that call site is the funnel UE uses for GetProjectionData as
@@ -426,6 +427,10 @@ void __fastcall Hook(void* self, UeVector* outLocation, UeRotator* outRotation) 
 
     frame.Dt = g_frameClock.Tick();
 
+    // SetMode returns at once when the mode is unchanged.
+    g_deps.session->SetMode(static_cast<cameraunlock::TrackingMode>(
+        g_requestedMode.load(std::memory_order_relaxed)));
+
     bool havePose = false;
     if (g_deps.session->Update(frame.Dt))
         havePose =
@@ -529,6 +534,7 @@ bool Install(const Dependencies& deps) {
         g_leanClamp.SetSettings(ls);
     }
     g_injectMode.store(Offsets().kDefaultInjectMode);
+    g_requestedMode.store(static_cast<int>(deps.session->GetMode()));
 
     auto& hm = cameraunlock::hooks::HookManager::Instance();
     if (auto s = hm.Initialize(); s != cameraunlock::hooks::HookStatus::Ok) {
@@ -564,5 +570,8 @@ void SetWorldSpaceYaw(bool worldSpace) { g_worldSpaceYaw.store(worldSpace); }
 bool WorldSpaceYaw() { return g_worldSpaceYaw.load(); }
 void SetInjectMode(int mode) { g_injectMode.store(mode); }
 int  InjectMode() { return g_injectMode.load(); }
+void RequestTrackingMode(cameraunlock::TrackingMode mode) {
+    g_requestedMode.store(static_cast<int>(mode));
+}
 
 }  // namespace tow_ht::view_hook
