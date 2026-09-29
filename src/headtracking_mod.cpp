@@ -3,6 +3,7 @@
 
 #include "headtracking_mod.h"
 
+#include <exception>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -230,7 +231,7 @@ bool InstallHooks() {
     return true;
 }
 
-DWORD WINAPI BootstrapThread(LPVOID) {
+DWORD Bootstrap() {
     OpenLog();
     Log::Line("=== Outer Worlds: Spacer's Choice Edition Head Tracking (UE 4.27) ===");
     // The whole no-teardown design rests on this having worked, so it is checked
@@ -275,6 +276,20 @@ DWORD WINAPI BootstrapThread(LPVOID) {
     // centred itself, is left where it is.
     if (g_config.center_window) CenterWindowWhenReady();
     return 0;
+}
+
+// A C++ exception leaving this thread reaches the unhandled-exception filter as
+// a bare 0xE06D7363 with no message, and the config is loaded before the crash
+// handler is even installed. Everything the bootstrap throws is a broken
+// invariant, so it still ends the process - this only writes what() down
+// first.
+DWORD WINAPI BootstrapThread(LPVOID) {
+    try {
+        return Bootstrap();
+    } catch (const std::exception& e) {
+        Log::Line("FATAL: startup threw: %s", e.what());
+        throw;
+    }
 }
 
 // Pin the module so it cannot be unloaded.
