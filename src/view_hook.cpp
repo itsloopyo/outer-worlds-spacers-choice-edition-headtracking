@@ -424,6 +424,14 @@ void __fastcall Hook(void* self, UeVector* outLocation, UeRotator* outRotation) 
     if (g_deps.config->widget_dump)
         diag::RunWidgetProbe(gate.InGameplay, g_deps.config->widget_dump_outer.c_str());
     ResolveFrameOptics(frame, outLocation, outRotation);
+    if (builds::UsesRuntimeDiscovery() && !frame.ReflectionOk) {
+        static bool reported = false;
+        if (!reported) {
+            Log::Line("discovery: camera unchanged until the live UE4 reflection layout is validated");
+            reported = true;
+        }
+        return;
+    }
 
     frame.Dt = g_frameClock.Tick();
 

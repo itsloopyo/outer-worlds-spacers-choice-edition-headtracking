@@ -4,30 +4,29 @@
 #include "build_registry.h"
 
 #include <array>
+#include <vector>
 
 #include <cameraunlock/memory/pe_fingerprint.h>
 
 #include "logging.h"
+#include "runtime_discovery.h"
 
 namespace tow_ht::builds
 {
-    // One extern per known build. Never-delete policy: when a game patch breaks
-    // the current build, derive new RVAs and ADD a new profile here (newest at
-    // the top of kKnownProfiles) without removing the old one. Users on the
-    // un-patched build still match their old profile by PE fingerprint.
+    // Keep the existing profiles usable even if an older compiler emitted
+    // code that the runtime discovery does not recognise.
     extern const BuildProfile kSteamProfile_20260804;
     extern const BuildProfile kSteamProfile_20260505;
 
     namespace
     {
-        // Newest-first. The first entry is the "primary" used to label
-        // newer/older when no profile matches.
         constexpr std::array<const BuildProfile*, 2> kKnownProfiles = {
             &kSteamProfile_20260804,
             &kSteamProfile_20260505,
         };
 
         const BuildProfile* g_active = nullptr;
+        BuildProfile g_discovered{};
 
         // A profile is "complete" iff it carries both the hook target and the
         // gameplay gate. Lets a profile with the correct fingerprint but RVAs
@@ -66,9 +65,8 @@ namespace tow_ht::builds
                 complete ? "" : " (incomplete - offsets TBD)");
             if (running.Matches(p->Fingerprint)) {
                 if (!complete) {
-                    Log::Line("build-check: fingerprint matches %s but its offsets "
-                              "are not yet derived - staying dormant", p->Name);
-                    return MatchResult::ProfileIncomplete;
+                    Log::Line("build-check: profile %s has no offsets; trying runtime discovery", p->Name);
+                    break;
                 }
                 g_active = p;
                 Log::Line("build-check: matched profile %s", p->Name);
@@ -76,19 +74,33 @@ namespace tow_ht::builds
             }
         }
 
-        // No match. Classify against the primary profile so the log explains
-        // direction ("patched newer", "older", or "tampered").
-        switch (cameraunlock::memory::ClassifyMismatch(
-                    running, kKnownProfiles.front()->Fingerprint)) {
-            case cameraunlock::memory::FingerprintMismatch::Newer:
-                return MatchResult::HostNewer;
-            case cameraunlock::memory::FingerprintMismatch::Older:
-                return MatchResult::HostOlder;
-            case cameraunlock::memory::FingerprintMismatch::Differs:
-            default:
-                return MatchResult::HostDiffers;
+        Log::Line("build-check: no complete profile matched; discovering engine addresses");
+        std::vector<std::uint8_t> image(running.SizeOfImage);
+        SIZE_T copied = 0;
+        if (!ReadProcessMemory(GetCurrentProcess(), host, image.data(), image.size(), &copied) ||
+            copied != image.size()) {
+            Log::Line("discovery: could not snapshot the executable: Win32 error %lu", GetLastError());
+            return MatchResult::DiscoveryFailed;
         }
+        std::string reason;
+        g_discovered = {"runtime-discovered", running, {}};
+        if (!DiscoverOffsets({image.data(), image.size(), reinterpret_cast<std::uintptr_t>(host)},
+                             g_discovered.Offsets, reason)) {
+            Log::Line("discovery: %s", reason.c_str());
+            return MatchResult::DiscoveryFailed;
+        }
+        g_active = &g_discovered;
+        const auto& offsets = g_discovered.Offsets;
+        Log::Line("discovery: validated view=0x%08llx render=0x%08llx objects=0x%08llx "
+                  "names=0x%08llx event=0x%08llx cursor=0x%zx",
+            static_cast<unsigned long long>(offsets.kGetPlayerViewPointRva),
+            static_cast<unsigned long long>(offsets.kKnownCallerRvas[0]),
+            static_cast<unsigned long long>(offsets.UObjectGlobals.kObjObjects),
+            static_cast<unsigned long long>(offsets.UObjectGlobals.kFNamePool),
+            static_cast<unsigned long long>(offsets.kProcessEventRva), offsets.kShowMouseCursorOffset);
+        return MatchResult::Matched;
     }
 
     const BuildProfile& ActiveProfile() { return *g_active; }
+    bool UsesRuntimeDiscovery() { return g_active == &g_discovered; }
 }

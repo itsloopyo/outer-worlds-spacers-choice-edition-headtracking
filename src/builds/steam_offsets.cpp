@@ -3,13 +3,8 @@
 
 #include "build_profile.h"
 
-// Every Steam build of The Outer Worlds: Spacer's Choice Edition this mod knows
-// about (Indiana/Binaries/Win64/Indiana-Win64-Shipping.exe, UE 4.27).
-// Append-only: when a patch breaks the RVAs below, ADD a kSteamProfile_<date>
-// and put it at the top of kKnownProfiles in build_registry.cpp. Never edit an
-// existing profile's numbers - a player who has not taken the patch still
-// matches their old profile by fingerprint. See AGENTS.md "Maintain
-// compatibility across new patches".
+// Pinned Steam builds retain their measured offsets for players who have not
+// updated. Other builds use runtime discovery in build_registry.cpp.
 //
 // UE 4.27 predates Large World Coordinates: FVector / FRotator / FVector2D are
 // floats, not the UE5 doubles. Every frame this mod writes into engine memory

@@ -107,24 +107,9 @@ void OpenLog() {
 // compiler warning here rather than a wrong diagnostic inherited silently.
 void LogDormantReason(builds::MatchResult match) {
     switch (match) {
-        case builds::MatchResult::HostNewer:
-            Log::Line("build-check: this game build is NEWER than any profile this "
-                      "mod knows about - check the releases page for an update. "
-                      "Staying dormant; game runs vanilla.");
-            break;
-        case builds::MatchResult::HostOlder:
-            Log::Line("build-check: this game build is OLDER than the profile - let "
-                      "Steam finish updating. Staying dormant; game runs vanilla.");
-            break;
-        case builds::MatchResult::HostDiffers:
-            Log::Line("build-check: this EXE carries a known build's timestamp with a "
-                      "different size or checksum, so it has been repacked or "
-                      "modified. This mod does not engage on a modified binary. "
-                      "Staying dormant; game runs vanilla.");
-            break;
-        case builds::MatchResult::ProfileIncomplete:
-            // SelectProfile already named the profile and what is missing.
-            Log::Line("build-check: staying dormant; game runs vanilla.");
+        case builds::MatchResult::DiscoveryFailed:
+            Log::Line("build-check: runtime discovery could not validate this build; "
+                      "staying dormant. Attach this log when reporting an unsupported build.");
             break;
         case builds::MatchResult::ReadFailed:
             Log::Line("build-check: the host EXE's PE header could not be read, so "

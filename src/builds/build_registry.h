@@ -7,7 +7,7 @@
 
 // Profile registry and selection. SelectProfile() fingerprints the host EXE
 // (PE TimeDateStamp + SizeOfImage + CheckSum) and installs the matching profile
-// as active, or stays dormant if no profile claims this build.
+// as active. Unlisted builds use validated runtime discovery.
 
 namespace tow_ht
 {
@@ -17,14 +17,12 @@ namespace tow_ht
         {
             Matched,     // Active profile set; mod can run.
             ReadFailed,  // Could not read the PE header.
-            HostNewer,   // Running EXE TimeDateStamp > primary profile.
-            HostOlder,   // Running EXE TimeDateStamp < primary profile.
-            HostDiffers, // Same timestamp, different size or checksum.
-            ProfileIncomplete, // Fingerprint matched a profile whose offsets are TBD.
+            DiscoveryFailed,
         };
 
         MatchResult SelectProfile(HMODULE host);
         const BuildProfile& ActiveProfile();
+        bool UsesRuntimeDiscovery();
     }
 
     // Accessor for the active profile's offset table. Must run after

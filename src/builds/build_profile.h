@@ -14,10 +14,10 @@
 // One BuildProfile describes a single shipped build of Outer Worlds: Spacer's Choice Edition:
 // the PE-header fingerprint that uniquely identifies it, plus every per-build
 // RVA / field offset the camera hook needs. The registry holds one profile per
-// supported build; at startup the mod fingerprints the live module and selects
-// the matching profile. No match leaves the mod fully dormant (no hooks
-// installed, game runs vanilla) - see AGENTS.md "Maintain compatibility across
-// new patches": never edit an existing profile's RVAs in place, ADD a new one.
+// pinned build; at startup the mod selects an exact match or discovers a new
+// profile from the executable's RTTI, native dispatches and named anchors.
+// Discovery rejects missing or ambiguous matches. Existing profiles retain
+// their offsets for players still running those builds.
 //
 // Outer Worlds: Spacer's Choice Edition is UE 4.27 (pre-LWC: FVector/FRotator
 // are 3-float, 12 bytes). The offset set injects the head pose into the

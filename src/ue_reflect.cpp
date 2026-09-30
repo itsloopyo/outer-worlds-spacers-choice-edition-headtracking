@@ -226,8 +226,8 @@ bool ValidateLayout() {
             Log::Line("reflect: UScriptStruct MinimalViewInfo never reached the "
                       "object table. The reflection layout cannot be proved, so the "
                       "reticle, the aim marker, the lean clamp and the zoom "
-                      "compensation all stay down for this session. The view still "
-                      "tracks your head.");
+                      "compensation all stay down for this session. %s",
+                      builds::UsesRuntimeDiscovery() ? "The camera stays unchanged." : "The view still tracks your head.");
         }
         return false;   // not reached the object table yet
     }
@@ -254,8 +254,8 @@ bool ValidateLayout() {
         Log::Line("reflect: the ReflectionLayout in this build profile does not read "
                   "MinimalViewInfo, so every feature that walks the engine's "
                   "reflection data stands down - the crosshair stays where the game "
-                  "puts it and the lean runs unclamped. The camera hook itself is "
-                  "unaffected.");
+                  "puts it. %s",
+                  builds::UsesRuntimeDiscovery() ? "The camera stays unchanged." : "The camera hook runs with unclamped lean.");
         return false;
     }
 
@@ -263,12 +263,16 @@ bool ValidateLayout() {
     const bool ok = f[0].Offset == 0 &&
                     f[1].Offset == known.kRotationStride &&
                     f[2].Offset == known.kFovOffset &&
-                    f[3].Offset == known.kAspectRatioOffset;
+                    f[3].Offset == known.kAspectRatioOffset &&
+                    f[0].Size == 12 && f[1].Size == 12 &&
+                    f[2].Size == sizeof(float) && f[3].Size == sizeof(float);
     Log::Line("reflect: MinimalViewInfo Location=+0x%zx Rotation=+0x%zx FOV=+0x%zx "
               "AspectRatio=+0x%zx (profile says 0x0 / 0x%zx / 0x%zx / 0x%zx) - %s",
         f[0].Offset, f[1].Offset, f[2].Offset, f[3].Offset,
         known.kRotationStride, known.kFovOffset, known.kAspectRatioOffset,
         ok ? "match" : "MISMATCH");
+    Log::Line("reflect: MinimalViewInfo field sizes Location=%zu Rotation=%zu FOV=%zu AspectRatio=%zu",
+        f[0].Size, f[1].Size, f[2].Size, f[3].Size);
     if (!ok) {
         g_rejected = true;
         Log::Line("reflect: the reflection data disagrees with the offsets this "

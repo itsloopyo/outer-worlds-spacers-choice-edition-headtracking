@@ -324,15 +324,11 @@ field of view, and the slider takes effect as you drag it, with no restart.
 
 - Confirm `xinput1_3.dll` and `OuterWorldsSpacersChoiceHeadTracking.asi` are
   both in `<game-root>\Indiana\Binaries\Win64\`.
-- Check `HeadTracking.log`, written next to the game EXE. A line reading
-  "fingerprint matches ... but its offsets are not yet derived" means the mod
-  recognized your game build but the camera hook for it has not shipped yet;
-  "game build is NEWER/OLDER than any profile" means a patch moved the offsets.
-  File an issue with the log attached.
-- In any of those cases the mod installs no hooks at all and the game runs
-  exactly as it does unmodded. Only Steam builds are fingerprinted, and of those
-  only the 2026-08-04 one carries camera offsets, so an Epic, GOG or Xbox copy -
-  or the 2026-05-05 Steam build - loads the mod and leaves it dormant.
+- Check `HeadTracking.log`, written next to the game EXE. For a build without a
+  matching profile, the mod discovers engine addresses at startup and checks
+  the camera layout before applying tracking. If discovery cannot validate a
+  required address or layout, the camera stays unchanged. File an issue with
+  the log attached; it names the failed check.
 - The log starts fresh every launch, so it only covers the session you just
   played. If the game crashed, attach `HeadTracking.prev.log` from the same
   folder too - that is the crashed session.

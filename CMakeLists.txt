@@ -71,6 +71,7 @@ set(MOD_SOURCES
     src/ue_reflect.cpp
     src/ue_vm.cpp
     src/builds/build_registry.cpp
+    src/builds/runtime_discovery.cpp
     src/builds/steam_offsets.cpp
 )
 
@@ -103,6 +104,15 @@ set_target_properties(OuterWorldsSpacersChoiceHeadTracking PROPERTIES
 option(TOW_BUILD_TESTS "Build the behaviour tests" ON)
 if(TOW_BUILD_TESTS)
     enable_testing()
+
+    add_executable(tow_runtime_discovery_tests
+        tests/runtime_discovery_tests.cpp
+        src/builds/runtime_discovery.cpp
+    )
+    target_include_directories(tow_runtime_discovery_tests PRIVATE
+        src tests cameraunlock-core/cpp/include
+    )
+    add_test(NAME tow_runtime_discovery_tests COMMAND tow_runtime_discovery_tests)
 
     add_executable(tow_ads_gate_tests tests/ads_gate_tests.cpp)
     target_include_directories(tow_ads_gate_tests PRIVATE
