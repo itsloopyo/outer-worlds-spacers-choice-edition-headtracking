@@ -73,8 +73,8 @@ public:
     }
 
     Vector Execute(const void* code, std::size_t size,
-                   const std::array<Vector, 147>& view,
-                   const std::array<Vector, 37>& primitive, bool gpuScene) {
+                   const std::array<Vector, 218>& view,
+                   const std::array<Vector, 37>& primitive, bool gpuScene, unsigned viewSlot) {
         ComPtr<ID3D11VertexShader> shader;
         HResult(device->CreateVertexShader(code, size, nullptr, &shader), "CreateVertexShader");
         const auto viewBuffer = Buffer(sizeof(view), D3D11_BIND_CONSTANT_BUFFER, view.data());
@@ -93,7 +93,7 @@ public:
             HResult(device->CreateInputLayout(&element, 1, code, size, &layout), "CreateInputLayout");
         }
         ID3D11Buffer* constants[] = {viewBuffer.Get(), gpuScene ? nullptr : primitiveBuffer.Get()};
-        context->VSSetConstantBuffers(0, 2, constants);
+        context->VSSetConstantBuffers(viewSlot, 2, constants);
         context->VSSetShader(shader.Get(), nullptr, 0);
         context->GSSetShader(geometry.Get(), nullptr, 0);
         context->IASetInputLayout(layout.Get());
@@ -132,21 +132,22 @@ void Equal(const Vector& actual, const Vector& expected) {
 
 int main() {
     Device device;
-    std::array<Vector, 147> view{};
+    std::array<Vector, 218> view{};
     std::array<Vector, 37> primitive{};
     for (unsigned i = 0; i < view.size(); ++i)
         view[i] = {float(i), float(i + 100), float(i + 200), float(i + 300)};
     for (unsigned i = 0; i < primitive.size(); ++i)
         primitive[i] = {float(i + 400), float(i + 500), float(i + 600), float(i + 700)};
     const std::array<unsigned, 12> rows{16, 17, 18, 20, 21, 22, 99, 100, 101, 103, 104, 105};
-    for (const bool gpuScene : {false, true}) {
-        std::string source = "cbuffer View:register(b0){float4 v[147];};";
+    for (const unsigned viewSlot : {0u, 1u}) for (const bool gpuScene : {false, true}) {
+        const auto viewRows = viewSlot == 0 ? 147u : 218u;
+        std::string source = "cbuffer View:register(b" + std::to_string(viewSlot) + "){float4 v[" + std::to_string(viewRows) + "];};";
         source += gpuScene ? "StructuredBuffer<float4> p:register(t0);" :
-                             "cbuffer Primitive:register(b1){float4 p[37];};";
+                             "cbuffer Primitive:register(b" + std::to_string(viewSlot + 1) + "){float4 p[37];};";
         source += gpuScene ? "float4 main(uint id:ATTRIBUTE13):SV_Position {float4 r=p[id*37+36];" :
                              "float4 main():SV_Position {float4 r=p[36];";
         for (const auto row : rows) source += "r+=v[" + std::to_string(row) + "];";
-        source += "return r+v[146];}";
+        source += "return r+v[" + std::to_string(viewRows - 1) + "];}";
         const auto original = Compile(source, "vs_5_0");
         const auto patched = tow_ht::weapon_shader::Rewrite(original->GetBufferPointer(), original->GetBufferSize());
         Check(!patched.empty(), "test shader was not matched");
@@ -154,7 +155,7 @@ int main() {
             std::memcpy(&primitive[35][3], &marker, sizeof(marker));
             Vector expected{};
             for (unsigned component = 0; component < 4; ++component) {
-                expected[component] = primitive[36][component] + view[146][component];
+                expected[component] = primitive[36][component] + view[viewRows - 1][component];
                 for (unsigned i = 0; i < rows.size(); ++i) {
                     float value = view[rows[i]][component];
                     if (marker == tow_ht::weapon_shader::kPrimitiveMarker && component < 3)
@@ -162,10 +163,10 @@ int main() {
                     expected[component] += value;
                 }
             }
-            Equal(device.Execute(patched.data(), patched.size() * 4, view, primitive, gpuScene), expected);
+            Equal(device.Execute(patched.data(), patched.size() * 4, view, primitive, gpuScene, viewSlot), expected);
             if (marker != tow_ht::weapon_shader::kPrimitiveMarker)
                 Equal(device.Execute(original->GetBufferPointer(), original->GetBufferSize(),
-                                     view, primitive, gpuScene), expected);
+                                     view, primitive, gpuScene, viewSlot), expected);
         }
     }
     const auto ordinary = Compile("float4 main():SV_Position{return float4(1,2,3,4);}", "vs_5_0");
@@ -174,5 +175,5 @@ int main() {
     const auto pixel = Compile("float4 main():SV_Target{return float4(1,2,3,4);}", "ps_5_0");
     Check(tow_ht::weapon_shader::Rewrite(pixel->GetBufferPointer(), pixel->GetBufferSize()).empty(),
           "pixel shader was changed");
-    std::cout << "Weapon shader WARP checks passed: both primitive paths, current and previous rotations, marker isolation\n";
+    std::cout << "Weapon shader WARP checks passed: both view layouts and primitive paths, current and previous rotations, marker isolation\n";
 }

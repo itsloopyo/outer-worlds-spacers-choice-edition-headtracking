@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Weapon flashes and shell effects stay aligned with the gun when turning your head.
 - Turning your head while aiming down sights keeps the weapon and its attachments aligned with the shot direction. The correction also covers the previous frame, preventing persistent weapon blur.
 
 ### Added

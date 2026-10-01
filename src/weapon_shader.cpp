@@ -61,25 +61,37 @@ std::vector<std::uint32_t> Rewrite(const void* bytes, std::size_t size) {
     if (shader.code.empty() || shader.code[0] != 0x00010050) return {};
     const auto& code = shader.code;
     const auto instructions = ReadDxbcInstructions(code);
-    bool view = false, primitive = false;
+    unsigned viewBuffer = kAbsent;
+    for (const auto& instruction : instructions) {
+        const auto at = instruction.begin;
+        if (instruction.opcode != 89 || instruction.end - at != 4 ||
+            (code[at + 1] & 0x7ffff000u) != 0x00208000u) continue;
+        if ((code[at + 2] == 0 && code[at + 3] == 147) ||
+            (code[at + 2] == 1 && code[at + 3] == 218)) {
+            if (viewBuffer != kAbsent) return {};
+            viewBuffer = code[at + 2];
+        }
+    }
+    if (viewBuffer == kAbsent) return {};
+    const auto primitiveBuffer = viewBuffer + 1;
+    bool primitive = false;
     unsigned temps = 0, primitiveInput = kAbsent;
     std::array<bool, 6> rotationReads{};
     for (const auto& instruction : instructions) {
         const auto at = instruction.begin;
         if (instruction.opcode == 89 && instruction.end - at == 4 &&
             (code[at + 1] & 0x7ffff000u) == 0x00208000u) {
-            view |= code[at + 2] == 0 && code[at + 3] == 147;
-            primitive |= code[at + 2] == 1 && code[at + 3] == 37;
+            primitive |= code[at + 2] == primitiveBuffer && code[at + 3] == 37;
         }
         if (instruction.opcode == 104 && instruction.end - at == 2) temps = code[at + 1];
         for (const auto& operand : instruction.operands) {
             if (operand.type != 8 || !operand.direct || operand.dimensions != 2 ||
-                operand.indices[0] != 0) continue;
+                operand.indices[0] != viewBuffer) continue;
             for (unsigned j = 0; j < rotationReads.size(); ++j)
                 rotationReads[j] = rotationReads[j] || operand.indices[1] == kViewRows[j];
         }
     }
-    if (!view || !std::all_of(rotationReads.begin(), rotationReads.end(), [](bool b) { return b; }))
+    if (!std::all_of(rotationReads.begin(), rotationReads.end(), [](bool b) { return b; }))
         return {};
     for (const auto& input : shader.inputs)
         if (input.semantic == "ATTRIBUTE" && input.semanticIndex == 13 && input.componentType == 1)
@@ -100,7 +112,7 @@ std::vector<std::uint32_t> Rewrite(const void* bytes, std::size_t size) {
             emit({0x8b0000a7, 0x80008302, 0x00199983, 0x001000f2, temporary,
                   0x0010000a, temps + 12, 0x00004001, 0, 0x00107e46, resource});
         } else {
-            emit({0x06000036, 0x001000f2, temporary, 0x00208e46, 1, row});
+            emit({0x06000036, 0x001000f2, temporary, 0x00208e46, primitiveBuffer, row});
         }
     };
     load(temps + 13, 35);
@@ -109,8 +121,8 @@ std::vector<std::uint32_t> Rewrite(const void* bytes, std::size_t size) {
     for (unsigned i = 0; i < 9; ++i) {
         load(temps + i, 27 + i);
         emit({0x0a000037, 0x00100072, temps + i, 0x00100ff6, temps + 13,
-              0x00100e46, temps + i, 0x00208e46, 0, kViewRows[i]});
-        emit({0x06000036, 0x00100082, temps + i, 0x0020803a, 0, kViewRows[i]});
+              0x00100e46, temps + i, 0x00208e46, viewBuffer, kViewRows[i]});
+        emit({0x06000036, 0x00100082, temps + i, 0x0020803a, viewBuffer, kViewRows[i]});
     }
     // The previous inverse rotation is the transpose; nine custom float4s fit
     // both frames only when that redundant matrix is reconstructed here.
@@ -118,12 +130,12 @@ std::vector<std::uint32_t> Rewrite(const void* bytes, std::size_t size) {
         for (unsigned j = 0; j < 3; ++j)
             emit({0x05000036, 0x00100002 | (1u << (4 + j)), temps + i,
                   0x0010000a | ((i - 9) << 4), temps + 6 + j});
-        emit({0x06000036, 0x00100082, temps + i, 0x0020803a, 0, kViewRows[i]});
+        emit({0x06000036, 0x00100082, temps + i, 0x0020803a, viewBuffer, kViewRows[i]});
         emit({0x0a000037, 0x001000f2, temps + i, 0x00100ff6, temps + 13,
-              0x00100e46, temps + i, 0x00208e46, 0, kViewRows[i]});
+              0x00100e46, temps + i, 0x00208e46, viewBuffer, kViewRows[i]});
     }
     std::vector<DxbcConstantRedirect> redirects;
-    for (unsigned i = 0; i < kViewRows.size(); ++i) redirects.push_back({0, kViewRows[i], temps + i});
+    for (unsigned i = 0; i < kViewRows.size(); ++i) redirects.push_back({viewBuffer, kViewRows[i], temps + i});
     return WriteDxbc(shader, RedirectDxbcConstants(code, redirects, prefix, 14));
 }
 

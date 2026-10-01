@@ -73,7 +73,7 @@ Array ReadArray(std::uintptr_t at, std::uint32_t limit) {
 
 bool Owns(std::uintptr_t object, const Owned& owned) {
     if (!ue_vm::IsRegistered(object) ||
-        !ue_reflect::ClassDerivesFrom(ue_reflect::ClassOf(object), "MeshComponent")) return false;
+        !ue_reflect::ClassDerivesFrom(ue_reflect::ClassOf(object), "PrimitiveComponent")) return false;
     const auto array = ReadArray(object + owned.offset, 36);
     std::uint32_t marker = 0;
     return array.count == 36 && ue::SafeReadU32(array.data + 35 * 4, marker) &&
@@ -104,15 +104,15 @@ void Restore(std::uintptr_t object, const Owned& owned) {
 }
 
 void Collect(std::uintptr_t object, std::set<std::uintptr_t>& visited,
-             std::set<std::uintptr_t>& meshes) {
+             std::set<std::uintptr_t>& primitives) {
     if (!object || !visited.insert(object).second) return;
     if (visited.size() > 512 || !ue_vm::IsRegistered(object) ||
         !ue_reflect::ClassDerivesFrom(ue_reflect::ClassOf(object), "SceneComponent"))
         throw std::runtime_error("invalid first-person component hierarchy");
-    if (ue_reflect::ClassDerivesFrom(ue_reflect::ClassOf(object), "MeshComponent")) meshes.insert(object);
+    if (ue_reflect::ClassDerivesFrom(ue_reflect::ClassOf(object), "PrimitiveComponent")) primitives.insert(object);
     const auto children = ReadArray(object + Field(object, "AttachChildren", 16).Offset, 512);
     for (std::uint32_t i = 0; i < children.count; ++i)
-        Collect(Pointer(children.data + i * sizeof(void*)), visited, meshes);
+        Collect(Pointer(children.data + i * sizeof(void*)), visited, primitives);
 }
 
 bool Resolve() {
@@ -140,10 +140,10 @@ void Apply(std::uintptr_t controller, const ue::FRotator& clean) {
     ue_reflect::FieldInfo fpv;
     const auto root = pawn && ue_reflect::FindPropertyInChain(ue_reflect::ClassOf(pawn), "FPVMesh", fpv)
         ? Pointer(pawn + Field(pawn, "FPVMesh", sizeof(void*)).Offset) : 0;
-    std::set<std::uintptr_t> visited, meshes;
-    Collect(root, visited, meshes);
+    std::set<std::uintptr_t> visited, primitives;
+    Collect(root, visited, primitives);
     for (auto it = state.components.begin(); it != state.components.end();) {
-        if (!meshes.count(it->first)) {
+        if (!primitives.count(it->first)) {
             Restore(it->first, it->second);
             it = state.components.erase(it);
         } else if (!Owns(it->first, it->second)) {
@@ -170,7 +170,7 @@ void Apply(std::uintptr_t controller, const ue::FRotator& clean) {
         float(pr.Y),float(pu.Y),float(pf.Y),0,
         float(pr.Z),float(pu.Z),float(pf.Z),0};
     std::memcpy(&values[35], &weapon_shader::kPrimitiveMarker, 4);
-    for (const auto object : meshes) {
+    for (const auto object : primitives) {
         if (!state.components.count(object)) {
             const auto internal = Field(object, "CustomPrimitiveDataInternal", 16).Offset;
             const auto defaults = Field(object, "CustomPrimitiveData", 16).Offset;
@@ -180,12 +180,12 @@ void Apply(std::uintptr_t controller, const ue::FRotator& clean) {
                 for (std::uint32_t i = 0; i < array.count; ++i) {
                     float value = 0;
                     if (!ue::SafeReadFloat(array.data + i * 4, value) || value != 0.f)
-                        throw std::runtime_error("first-person mesh already uses custom primitive data");
+                        throw std::runtime_error("first-person component already uses custom primitive data");
                 }
                 if (offset == internal) owned.original.resize(array.count, 0.f);
             }
             state.components.emplace(object, std::move(owned));
-            Log::Line("weapon: clean aim bound to first-person mesh %p", reinterpret_cast<void*>(object));
+            Log::Line("weapon: clean aim bound to first-person %s %p", ue::ClassName(object).c_str(), reinterpret_cast<void*>(object));
         }
         for (int i = 0; i < 36; ++i) Set(object, i, values[i]);
     }
