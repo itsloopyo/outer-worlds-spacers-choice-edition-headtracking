@@ -16,7 +16,7 @@ section below.
 | injector | `3a384e8` (inside Ultimate ASI Loader v9.7.4) | Zlib | Compiled into the vendored dinput8.dll |
 | miniz | 11.0.2 (inside Ultimate ASI Loader v9.7.4) | MIT | Compiled into the vendored dinput8.dll |
 | MinHook | v1.3.3 | BSD-2-Clause | Compiled into `OuterWorldsSpacersChoiceHeadTracking.asi` |
-| cameraunlock-core | 88a20e7789fb5ad907ae06136bc01184edbf4b21 | MIT | Compiled into `OuterWorldsSpacersChoiceHeadTracking.asi`, and its installer scripts ship verbatim in the installer ZIP |
+| cameraunlock-core | 036e683e1013f0c8848ca65dc129695e59178869 | MIT | Compiled into `OuterWorldsSpacersChoiceHeadTracking.asi`, and its installer scripts ship verbatim in the installer ZIP |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 | Unreal Engine | 4.27 | Unreal Engine EULA | Not bundled; type and member names only |
 
@@ -268,7 +268,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Git submodule at `cameraunlock-core/`, compiled into `OuterWorldsSpacersChoiceHeadTracking.asi`. Our own code,
 MIT licensed, reproduced here so the notices are complete.
 
-- **Version:** commit `88a20e7789fb5ad907ae06136bc01184edbf4b21`
+- **Version:** commit `036e683e1013f0c8848ca65dc129695e59178869`
 - **License:** `MIT`
 - **Upstream:** https://github.com/itsloopyo/cameraunlock-core
 - **Usage:** Shared tracking pipeline (UDP receiver, pose interpolation,
