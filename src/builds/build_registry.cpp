@@ -27,6 +27,25 @@ namespace tow_ht::builds
 
         const BuildProfile* g_active = nullptr;
         BuildProfile g_discovered{};
+        std::uint32_t g_sceneView = 0;
+
+        bool ResolveScene(HMODULE host, std::uint32_t size) {
+            std::vector<std::uint8_t> image(size);
+            SIZE_T copied = 0;
+            if (!ReadProcessMemory(GetCurrentProcess(), host, image.data(), image.size(), &copied) ||
+                copied != image.size()) {
+                Log::Line("discovery: scene-view snapshot failed: Win32 error %lu", GetLastError());
+                return false;
+            }
+            std::string reason;
+            if (!DiscoverSceneView({image.data(), image.size(), reinterpret_cast<std::uintptr_t>(host)},
+                static_cast<std::uint32_t>(g_active->Offsets.kKnownCallerRvas[0]), g_sceneView, reason)) {
+                Log::Line("discovery: %s", reason.c_str());
+                return false;
+            }
+            Log::Line("discovery: scene-view construction validated at RVA 0x%08x", g_sceneView);
+            return true;
+        }
 
         // A profile is "complete" iff it carries both the hook target and the
         // gameplay gate. Lets a profile with the correct fingerprint but RVAs
@@ -69,6 +88,7 @@ namespace tow_ht::builds
                     break;
                 }
                 g_active = p;
+                if (!ResolveScene(host, running.SizeOfImage)) return MatchResult::DiscoveryFailed;
                 Log::Line("build-check: matched profile %s", p->Name);
                 return MatchResult::Matched;
             }
@@ -90,6 +110,7 @@ namespace tow_ht::builds
             return MatchResult::DiscoveryFailed;
         }
         g_active = &g_discovered;
+        if (!ResolveScene(host, running.SizeOfImage)) return MatchResult::DiscoveryFailed;
         const auto& offsets = g_discovered.Offsets;
         Log::Line("discovery: validated view=0x%08llx render=0x%08llx objects=0x%08llx "
                   "names=0x%08llx event=0x%08llx cursor=0x%zx",
@@ -103,4 +124,5 @@ namespace tow_ht::builds
 
     const BuildProfile& ActiveProfile() { return *g_active; }
     bool UsesRuntimeDiscovery() { return g_active == &g_discovered; }
+    std::uintptr_t SceneViewRva() { return g_sceneView; }
 }

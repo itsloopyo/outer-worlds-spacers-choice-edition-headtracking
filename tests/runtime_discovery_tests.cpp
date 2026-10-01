@@ -163,7 +163,60 @@ void Rejected(const Fixture& fixture, const char* diagnostic) {
 
 }
 
+void SceneDiscovery() {
+    for (const auto shift : {0u, 0x5000u}) {
+        Fixture f(shift, 0x7ff600000000);
+        const std::uint32_t entries[][2] = {
+            {0x2000,0x2080}, {0x2080,0x2100}, {0x2100,0x2180},
+            {0x2200,0x2280}, {0x2300,0x2380}, {0x2400,0x2480}};
+        auto record = 0x29000u + shift;
+        for (const auto& entry : entries) {
+            f.Write<std::uint32_t>(record, entry[0] + shift);
+            f.Write<std::uint32_t>(record + 4, entry[1] + shift);
+            f.Write<std::uint32_t>(record + 8, 0x6000 + shift);
+            record += 12;
+        }
+        f.Write<std::uint32_t>(0x98 + 112 + 28, record - 0x29000 - shift);
+        f.bytes[0x6000 + shift] = 1;
+        f.bytes[0x6020 + shift] = 0x21;
+        f.Write<std::uint32_t>(0x6024 + shift, 0x2000 + shift);
+        f.Write<std::uint32_t>(0x6028 + shift, 0x2080 + shift);
+        f.Write<std::uint32_t>(0x602c + shift, 0x6000 + shift);
+        f.Write<std::uint32_t>(0x29000 + 12 + 8 + shift, 0x6020 + shift);
+        f.Pointer(0x5800 + 8 * 5, 0x2000);
+        f.Pointer(0x5800 + 8 * 6, 0x2100);
+        f.Pointer(0x5800 + 8 * 9, 0x2300);
+        f.Code(0x2110, {0xc7,0x85,0,0,0,0,0,0,0xb4,0x42,
+            0xc7,0x85,0,0,0,0,0,0,0xb4,0x42,0x44,0x89,0x64,0x24,0x20,0xe8,0,0,0,0});
+        f.Relative(0x212a, 0x2200);
+        f.Code(0x2210, {0x49,0x8b,0xd6,0x45,0x8b,0xc4,0xff,0x90,0x48,0,0,0});
+        f.Code(0x2310, {0xff,0x90,0x28,0,0,0});
+        std::uint32_t scene = 0;
+        std::string reason;
+        const auto discover = [&] {
+            return tow_ht::builds::DiscoverSceneView(
+                {f.bytes.data(), f.bytes.size(), f.base}, 0x2090 + shift, scene, reason);
+        };
+        CHECK_MSG(discover(), reason.c_str());
+        CHECK(scene == 0x2100 + shift);
+        f.bytes[0x2312 + shift] = 0x30;
+        CHECK(!discover());
+        f.bytes[0x2312 + shift] = 0x28;
+        f.Pointer(0x5900 + 8 * 5, 0x2000);
+        f.Pointer(0x5900 + 8 * 6, 0x2400);
+        f.Pointer(0x5900 + 8 * 9, 0x2300);
+        std::memcpy(f.bytes.data() + 0x2410 + shift, f.bytes.data() + 0x2110 + shift, 30);
+        f.Relative(0x242a, 0x2200);
+        CHECK(!discover());
+        CHECK(reason.find("uniquely") != std::string::npos);
+        f.Write<std::uint32_t>(0x602c + shift, 0x6020 + shift);
+        CHECK(!discover());
+        CHECK(reason.find("unwind chain") != std::string::npos);
+    }
+}
+
 int main() {
+    SceneDiscovery();
     Valid(Fixture{});
     Valid(Fixture{0x5000, 0x7ff600000000, 7, 10});
     Fixture duplicate;

@@ -57,6 +57,9 @@ set(MOD_SOURCES
     src/ads_pose.cpp
     src/ads_state.cpp
     src/view_hook.cpp
+    src/weapon_view.cpp
+    src/weapon_graphics.cpp
+    src/weapon_shader.cpp
     src/view_hook_diag.cpp
     src/camera_boundary.cpp
     src/camera_fov.cpp
@@ -104,6 +107,11 @@ set_target_properties(OuterWorldsSpacersChoiceHeadTracking PROPERTIES
 option(TOW_BUILD_TESTS "Build the behaviour tests" ON)
 if(TOW_BUILD_TESTS)
     enable_testing()
+
+    add_executable(tow_weapon_shader_tests tests/weapon_shader_tests.cpp src/weapon_shader.cpp)
+    target_include_directories(tow_weapon_shader_tests PRIVATE src)
+    target_link_libraries(tow_weapon_shader_tests PRIVATE cameraunlock d3d11 d3dcompiler)
+    add_test(NAME tow_weapon_shader_tests COMMAND tow_weapon_shader_tests)
 
     add_executable(tow_runtime_discovery_tests
         tests/runtime_discovery_tests.cpp

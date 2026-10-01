@@ -23,6 +23,7 @@ namespace tow_ht
         MatchResult SelectProfile(HMODULE host);
         const BuildProfile& ActiveProfile();
         bool UsesRuntimeDiscovery();
+        std::uintptr_t SceneViewRva();
     }
 
     // Accessor for the active profile's offset table. Must run after

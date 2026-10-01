@@ -2,6 +2,8 @@
 // Copyright (c) 2026 itsloopyo
 
 #include "view_hook.h"
+#include "weapon_view.h"
+#include "weapon_graphics.h"
 
 #include <atomic>
 #include <cmath>
@@ -381,6 +383,10 @@ void __fastcall Hook(void* self, UeVector* outLocation, UeRotator* outRotation) 
                            static_cast<double>(outRotation->Yaw),
                            static_cast<double>(outRotation->Roll)};
     frame.CleanEye = *outLocation;
+    if (!weapon_view::Update(frame.Controller, frame.Clean)) {
+        StandDown();
+        return;
+    }
 
     diag::NoteHookThread();
     frame.Call = g_calls.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -550,6 +556,7 @@ bool Install(const Dependencies& deps) {
             cameraunlock::hooks::HookStatusToString(s));
         return false;
     }
+    if (!weapon_graphics::Install() || !weapon_view::Install()) return false;
     void* target = reinterpret_cast<void*>(
         ue::ModuleBase() + Offsets().kGetPlayerViewPointRva);
     if (auto s = hm.CreateHook(target, reinterpret_cast<void*>(&Hook),

@@ -16,5 +16,7 @@ struct ImageView {
 };
 
 bool DiscoverOffsets(ImageView image, OffsetTable& offsets, std::string& reason);
+bool DiscoverSceneView(ImageView image, std::uint32_t viewPointCaller,
+                       std::uint32_t& sceneView, std::string& reason);
 
 }

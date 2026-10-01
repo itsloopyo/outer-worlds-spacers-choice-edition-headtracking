@@ -71,6 +71,7 @@ public:
             Require(functions_.empty() || functions_.back().begin < begin,
                     "unsorted PE exception directory");
             functions_.push_back({begin, end - begin});
+            unwind_.push_back(Read<std::uint32_t>(exceptionRva + i + 8));
         }
     }
 
@@ -99,6 +100,35 @@ public:
             [](std::uint32_t address, Range range) { return address < range.begin; });
         if (it == functions_.begin() || !(--it)->Contains(at)) return {};
         return *it;
+    }
+
+    std::uint32_t FunctionRoot(std::uint32_t at) const {
+        auto it = std::upper_bound(functions_.begin(), functions_.end(), at,
+            [](std::uint32_t address, Range range) { return address < range.begin; });
+        Require(it != functions_.begin() && (--it)->Contains(at), "function has no unwind record");
+        auto root = it->begin;
+        auto unwind = unwind_[static_cast<std::size_t>(it - functions_.begin())];
+        for (unsigned depth = 0; depth < 32; ++depth) {
+            const auto flags = Read<std::uint8_t>(unwind);
+            Require((flags & 7) == 1 || (flags & 7) == 2, "unsupported unwind-info version");
+            if (!(flags & 0x20)) return root;
+            const auto codes = Read<std::uint8_t>(unwind + 2);
+            const auto chain = unwind + 4 + ((static_cast<unsigned>(codes) + 1) & ~1u) * 2;
+            root = Read<std::uint32_t>(chain);
+            unwind = Read<std::uint32_t>(chain + 8);
+            Require(text.Contains(root), "chained function entry is outside executable code");
+        }
+        throw Rejected("cyclic or excessive unwind chain");
+    }
+
+    Range WholeFunction(std::uint32_t root) const {
+        auto it = std::lower_bound(functions_.begin(), functions_.end(), root,
+            [](Range range, std::uint32_t address) { return range.begin < address; });
+        Require(it != functions_.end() && it->begin == root, "missing primary function entry");
+        auto end = root;
+        for (; it != functions_.end() && FunctionRoot(it->begin) == root; ++it)
+            end = it->begin + it->size;
+        return {root, end - root};
     }
 
     std::vector<std::uint32_t> Find(Range range, std::initializer_list<int> pattern) const {
@@ -181,6 +211,7 @@ private:
     std::map<std::string, Range> sections_;
     std::map<std::string, std::uint32_t> flags_;
     std::vector<Range> functions_;
+    std::vector<std::uint32_t> unwind_;
 };
 
 std::uint32_t Unique(const std::set<std::uint32_t>& values, const char* reason) {
@@ -328,6 +359,54 @@ OffsetTable Resolve(const Image& image) {
 bool DiscoverOffsets(ImageView image, OffsetTable& offsets, std::string& reason) {
     try {
         offsets = Resolve(Image(image));
+        reason.clear();
+        return true;
+    } catch (const Rejected& error) {
+        reason = error.what();
+        return false;
+    }
+}
+
+bool DiscoverSceneView(ImageView view, std::uint32_t viewPointCaller,
+                       std::uint32_t& sceneView, std::string& reason) {
+    try {
+        const Image image(view);
+        const auto viewPoint = image.FunctionRoot(viewPointCaller);
+        std::set<std::uint32_t> matches;
+        for (const auto pointer : image.Pointers(viewPoint)) {
+            if (!image.rdata.Contains(pointer + 8, 8)) continue;
+            const auto scene = image.Pointer(pointer + 8);
+            if (!image.text.Contains(scene) || image.Function(scene).begin != scene) continue;
+            const auto body = image.WholeFunction(scene);
+            const auto initializers = image.Find(body, {
+                0xc7,0x85,-1,-1,-1,-1,0,0,0xb4,0x42,
+                0xc7,0x85,-1,-1,-1,-1,0,0,0xb4,0x42,
+                0x44,0x89,0x64,0x24,0x20,0xe8,-1,-1,-1,-1});
+            for (const auto init : initializers) {
+                const auto options = image.Relative(init + 26);
+                if (!image.text.Contains(options) || image.Function(options).begin != options) continue;
+                const auto optionsBody = image.WholeFunction(options);
+                for (const auto call : image.Find(optionsBody, {
+                        0x49,0x8b,0xd6,0x45,0x8b,0xc4,0xff,0x90,-1,-1,-1,-1})) {
+                    const auto projectionSlot = image.Read<std::uint32_t>(call + 8);
+                    if (projectionSlot % 8 || projectionSlot > 0x1000) continue;
+                    for (unsigned next = 2; next < 32; ++next) {
+                        const auto projectionPointer = pointer + next * 8;
+                        if (!image.rdata.Contains(projectionPointer, 8) || projectionPointer < projectionSlot) continue;
+                        const auto projection = image.Pointer(projectionPointer);
+                        if (!image.text.Contains(projection) || image.Function(projection).begin != projection) continue;
+                        const auto table = projectionPointer - projectionSlot;
+                        if (!image.rdata.Contains(table, 8)) continue;
+                        for (const auto viewCall : image.Find(image.WholeFunction(projection),
+                                                             {0xff,0x90,-1,-1,-1,-1})) {
+                            const auto slot = image.Read<std::uint32_t>(viewCall + 2);
+                            if (slot % 8 == 0 && table + slot == pointer) matches.insert(scene);
+                        }
+                    }
+                }
+            }
+        }
+        sceneView = Unique(matches, "scene-view construction and projection dispatch do not agree uniquely");
         reason.clear();
         return true;
     } catch (const Rejected& error) {

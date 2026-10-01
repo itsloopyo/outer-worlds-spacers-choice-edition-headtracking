@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Turning your head while aiming down sights keeps the weapon and its attachments aligned with the shot direction. The correction also covers the previous frame, preventing persistent weapon blur.
+
 ### Added
 
 - The tracking mode (`Page Up` / `Ctrl+Shift+G`) and the yaw mode (`Page Down` / `Ctrl+Shift+H`) you pick are saved to `CameraUnlock.ini` and come back at the next start. `End` / `Ctrl+Shift+Y` still changes the current session only; `EnableOnStartup` decides whether tracking starts on.
